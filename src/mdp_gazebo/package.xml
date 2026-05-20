@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>mdp_gazebo</name>
+  <version>0.1.0</version>
+  <description>Custom Gazebo worlds for MDP 2026 FloraNova greenhouse robot</description>
+  <maintainer email="ignacio.quintanilla@hotmail.com">MDP Group 25</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

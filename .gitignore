@@ -1,0 +1,12 @@
+build/
+install/
+log/
+__pycache__/
+*.pyc
+.colcon_install_layout
+
+# vcs-imported repos — managed via sources.repos, not tracked directly
+src/mirte-gazebo/
+src/mirte-ros-packages/
+src/gazebo_grasp_fix/
+.vscode/

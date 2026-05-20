@@ -1,0 +1,153 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+  <world name="greenhouse">
+
+    <include>
+      <uri>model://sun</uri>
+    </include>
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <physics type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.53 0.81 0.92 1</background>
+      <shadows>0</shadows>
+    </scene>
+
+    <!-- Greenhouse floor: 10 m x 6 m, origin at (5, 3) so robot spawns near (1,1) -->
+
+    <!-- North wall -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>5 6 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>10 0.1 1</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>10 0.1 1</size></box></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- South wall -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>5 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>10 0.1 1</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>10 0.1 1</size></box></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- West wall -->
+    <model name="wall_west">
+      <static>true</static>
+      <pose>0 3 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.1 6 1</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.1 6 1</size></box></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- East wall -->
+    <model name="wall_east">
+      <static>true</static>
+      <pose>10 3 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.1 6 1</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>0.1 6 1</size></box></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Plant tables: 1.2 m x 0.6 m, 0.8 m tall, arranged in two rows -->
+    <!-- Row A (y=2) -->
+    <model name="table_a1">
+      <static>true</static>
+      <pose>3 2 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.2 0.6 0.8</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>1.2 0.6 0.8</size></box></geometry>
+          <material><ambient>0.4 0.6 0.3 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="table_a2">
+      <static>true</static>
+      <pose>5 2 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.2 0.6 0.8</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>1.2 0.6 0.8</size></box></geometry>
+          <material><ambient>0.4 0.6 0.3 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="table_a3">
+      <static>true</static>
+      <pose>7 2 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.2 0.6 0.8</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>1.2 0.6 0.8</size></box></geometry>
+          <material><ambient>0.4 0.6 0.3 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Row B (y=4) -->
+    <model name="table_b1">
+      <static>true</static>
+      <pose>3 4 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.2 0.6 0.8</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>1.2 0.6 0.8</size></box></geometry>
+          <material><ambient>0.4 0.6 0.3 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="table_b2">
+      <static>true</static>
+      <pose>5 4 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.2 0.6 0.8</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>1.2 0.6 0.8</size></box></geometry>
+          <material><ambient>0.4 0.6 0.3 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="table_b3">
+      <static>true</static>
+      <pose>7 4 0.4 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>1.2 0.6 0.8</size></box></geometry></collision>
+        <visual name="vis">
+          <geometry><box><size>1.2 0.6 0.8</size></box></geometry>
+          <material><ambient>0.4 0.6 0.3 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
