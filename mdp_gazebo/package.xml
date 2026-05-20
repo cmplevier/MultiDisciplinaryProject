@@ -6,6 +6,10 @@
   <maintainer email="ignacio.quintanilla@hotmail.com">MDP Group 25</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>mirte_gazebo</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>twist_mux</exec_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

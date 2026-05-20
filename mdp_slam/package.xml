@@ -1,13 +1,16 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>mdp_bringup</name>
-  <version>0.1.0</version>
-  <description>Bringup launch files for MDP 2026 FloraNova greenhouse robot (Empty - use mdp_slam or mdp_localization)</description>
-  <maintainer email="ignacio.quintanilla@hotmail.com">MDP Group 25</maintainer>
-  <license>Apache-2.0</license>
+  <name>mdp_slam</name>
+  <version>0.0.0</version>
+  <description>SLAM configurations and launch files for MDP 2026 FloraNova greenhouse robot</description>
+  <maintainer email="d.h.exterkate@student.tudelft.nl">dextertje</maintainer>
+  <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>slam_toolbox</depend>
+  <depend>rviz2</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

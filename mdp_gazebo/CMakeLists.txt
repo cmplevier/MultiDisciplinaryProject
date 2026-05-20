@@ -3,7 +3,7 @@ project(mdp_gazebo)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY worlds rviz
+install(DIRECTORY worlds rviz launch
   DESTINATION share/${PROJECT_NAME}
 )
 

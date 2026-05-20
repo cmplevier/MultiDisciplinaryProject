@@ -11,7 +11,7 @@
   <!-- Launch Gazebo with the greenhouse world -->
   <include file="$(find-pkg-share mirte_gazebo)/launch/gazebo_mirte_world_generated.launch.xml">
     <arg name="gui" value="$(var gui)"/>
-    <arg name="generated_world" value="$(find-pkg-share mdp_gazebo)/worlds/greenhouse.world"/>
+    <arg name="generated_world" value="$(find-pkg-share mdp_gazebo)/worlds/asymmetric_greenhouse.world"/>
   </include>
 
   <!-- Spawn MIRTE master near the south-west corner, facing into the greenhouse -->
