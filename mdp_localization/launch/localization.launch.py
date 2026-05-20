@@ -98,7 +98,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'global_localization',
-            default_value='true',
+            default_value='false',
             description='Spread AMCL particles over the whole map after startup. Use false when the initial pose is known to be accurate.'
         ),
 
