@@ -63,7 +63,7 @@ class CustomTeleopJoy(Node):
             twist.linear.y = 0.0
             twist.angular.z = 0.0                
             
-        self.publisher.publish(twist)
+        self.base_pub.publish(twist)
 
 def main(args=None):
     rclpy.init(args=args)

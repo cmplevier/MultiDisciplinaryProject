@@ -7,6 +7,7 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(rclpy REQUIRED)
 
 
 if(BUILD_TESTING)
@@ -22,8 +23,14 @@ if(BUILD_TESTING)
 endif()
 
 
-install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY config launch 
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(FILES scripts/custom_teleop.py
+  DESTINATION lib/${PROJECT_NAME}
+  PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+)
 
 
 ament_package()
