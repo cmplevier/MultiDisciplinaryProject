@@ -12,6 +12,7 @@ def generate_launch_description():
     map_file = LaunchConfiguration('map')
     params_file = LaunchConfiguration('params_file')
     global_localization = LaunchConfiguration('global_localization')
+    use_rviz = LaunchConfiguration('use_rviz')
 
     nav2_bringup_dir = FindPackageShare('nav2_bringup')
 
@@ -51,6 +52,7 @@ def generate_launch_description():
     )
 
     rviz_cmd = Node(
+        condition=IfCondition(use_rviz),
         package='rviz2',
         executable='rviz2',
         name='rviz2',
@@ -100,6 +102,11 @@ def generate_launch_description():
             'global_localization',
             default_value='false',
             description='Spread AMCL particles over the whole map after startup. Use false when the initial pose is known to be accurate.'
+        ),
+        DeclareLaunchArgument(
+            'use_rviz',
+            default_value='true',
+            description='Launch RViz for localization'
         ),
 
         localization_cmd,

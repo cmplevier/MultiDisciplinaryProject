@@ -1,0 +1,146 @@
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description():
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    map_file = LaunchConfiguration('map')
+    localization_params_file = LaunchConfiguration('localization_params_file')
+    navigation_params_file = LaunchConfiguration('navigation_params_file')
+    global_localization = LaunchConfiguration('global_localization')
+    autostart = LaunchConfiguration('autostart')
+    use_respawn = LaunchConfiguration('use_respawn')
+    log_level = LaunchConfiguration('log_level')
+    launch_rviz = LaunchConfiguration('launch_rviz')
+    rviz_config_file = LaunchConfiguration('rviz_config_file')
+
+    localization_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare('mdp_localization'),
+                'launch',
+                'localization.launch.py'
+            ])
+        ),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'map': map_file,
+            'params_file': localization_params_file,
+            'global_localization': global_localization,
+            'use_rviz': 'false',
+        }.items()
+    )
+
+    navigation_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare('mdp_navigation'),
+                'launch',
+                'navigation.launch.py'
+            ])
+        ),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'map': map_file,
+            'params_file': navigation_params_file,
+            'autostart': autostart,
+            'use_respawn': use_respawn,
+            'log_level': log_level,
+            'use_rviz': 'false',
+        }.items()
+    )
+
+    rviz_node = Node(
+        condition=IfCondition(launch_rviz),
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['-d', rviz_config_file],
+        parameters=[{'use_sim_time': use_sim_time}],
+        remappings=[
+            ('/tf', 'tf'),
+            ('/tf_static', 'tf_static'),
+        ],
+    )
+
+    default_localization_params = PathJoinSubstitution([
+        FindPackageShare('mdp_localization'),
+        'config',
+        'amcl_params.yaml'
+    ])
+    default_navigation_params = PathJoinSubstitution([
+        FindPackageShare('mdp_navigation'),
+        'config',
+        'nav2_params.yaml'
+    ])
+    default_map_file = PathJoinSubstitution([
+        FindPackageShare('mdp_localization'),
+        'maps',
+        'asym_map.yaml'
+    ])
+
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='true',
+            description='Use simulation time'
+        ),
+        DeclareLaunchArgument(
+            'map',
+            default_value=default_map_file,
+            description='Full path to map yaml file'
+        ),
+        DeclareLaunchArgument(
+            'localization_params_file',
+            default_value=default_localization_params,
+            description='AMCL / localization parameters file'
+        ),
+        DeclareLaunchArgument(
+            'navigation_params_file',
+            default_value=default_navigation_params,
+            description='Nav2 planner/controller parameters file'
+        ),
+        DeclareLaunchArgument(
+            'global_localization',
+            default_value='false',
+            description='Run global localization after startup'
+        ),
+        DeclareLaunchArgument(
+            'autostart',
+            default_value='true',
+            description='Autostart Nav2 lifecycle nodes'
+        ),
+        DeclareLaunchArgument(
+            'use_respawn',
+            default_value='false',
+            description='Respawn Nav2 nodes if they exit'
+        ),
+        DeclareLaunchArgument(
+            'log_level',
+            default_value='info',
+            description='Logging level for Nav2 nodes'
+        ),
+        DeclareLaunchArgument(
+            'launch_rviz',
+            default_value='true',
+            description='Launch RViz with the combined localization and navigation config'
+        ),
+        DeclareLaunchArgument(
+            'rviz_config_file',
+            default_value=PathJoinSubstitution([
+                FindPackageShare('mdp_navigation'),
+                'rviz',
+                'combined.rviz'
+            ]),
+            description='RViz config file to use for combined localization and navigation'
+        ),
+        localization_launch,
+        navigation_launch,
+        rviz_node,
+    ])

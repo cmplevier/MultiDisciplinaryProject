@@ -57,12 +57,41 @@ mdp_plant_monitor/    # Plant health detection + digital twin feed
 mdp_slm_tts/          # SLM + TTS robot personality
 ```
 
-## Simulation
+## Simulation And Navigation
 
-Launch Gazebo with MIRTE Master (run twice on first use — first run caches models):
+Launch Gazebo with MIRTE Master in the custom greenhouse world. Run this from the workspace root in one terminal:
 
 ```bash
-ros2 launch mirte_gazebo gazebo_mirte_master_empty.launch.xml
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch mdp_gazebo greenhouse_world.launch.xml rviz:=false
+```
+
+The `rviz:=false` argument keeps Gazebo from opening its own RViz window, because the navigation launch below opens the combined localization/navigation RViz config.
+
+In a second terminal, launch localization, Nav2, and RViz together:
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch mdp_navigation nav2_with_localization.launch.py
+```
+
+This uses the default map and parameter files:
+
+```text
+map: mdp_localization/maps/asym_map.yaml
+localization params: mdp_localization/config/amcl_params.yaml
+navigation params: mdp_navigation/config/nav2_params.yaml
+rviz config: mdp_navigation/rviz/combined.rviz
+```
+
+To use another map or RViz config:
+
+```bash
+ros2 launch mdp_navigation nav2_with_localization.launch.py \
+  map:=/absolute/path/to/map.yaml \
+  rviz_config_file:=/absolute/path/to/config.rviz
 ```
 
 Keyboard teleop:

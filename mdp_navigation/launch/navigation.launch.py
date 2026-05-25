@@ -17,8 +17,9 @@ def generate_launch_description():
     log_level = LaunchConfiguration("log_level")
     map_yaml_file = LaunchConfiguration("map")
     use_rviz = LaunchConfiguration("use_rviz")
+    rviz_config_file = LaunchConfiguration("rviz_config_file")
 
-    rviz_config_file = PathJoinSubstitution(
+    default_rviz_config_file = PathJoinSubstitution(
         [FindPackageShare("mdp_navigation"), "rviz", "navigation.rviz"]
     )
 
@@ -39,7 +40,7 @@ def generate_launch_description():
         ("/tf_static", "tf_static"),
     ]
 
-    cmd_vel_remap = [("cmd_vel", "/cmd_vel_nav")]
+    cmd_vel_remap = [("cmd_vel", "/mirte_base_controller/cmd_vel_unstamped")]
 
     nav_actions = [
         PushRosNamespace(
@@ -197,6 +198,14 @@ def generate_launch_description():
             "use_rviz",
             default_value="True",
             description="Whether to start RViz",
+        )
+    )
+
+    ld.add_action(
+        DeclareLaunchArgument(
+            "rviz_config_file",
+            default_value=default_rviz_config_file,
+            description="RViz config file to use for navigation visualizations",
         )
     )
 
