@@ -2,7 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -12,7 +12,10 @@ def generate_launch_description():
     map_file = LaunchConfiguration('map')
     localization_params_file = LaunchConfiguration('localization_params_file')
     navigation_params_file = LaunchConfiguration('navigation_params_file')
+    odom_topic = LaunchConfiguration('odom_topic')
+    cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
     global_localization = LaunchConfiguration('global_localization')
+    localization_bond_timeout = LaunchConfiguration('localization_bond_timeout')
     autostart = LaunchConfiguration('autostart')
     use_respawn = LaunchConfiguration('use_respawn')
     log_level = LaunchConfiguration('log_level')
@@ -32,6 +35,7 @@ def generate_launch_description():
             'map': map_file,
             'params_file': localization_params_file,
             'global_localization': global_localization,
+            'bond_timeout': localization_bond_timeout,
             'use_rviz': 'false',
         }.items()
     )
@@ -48,6 +52,8 @@ def generate_launch_description():
             'use_sim_time': use_sim_time,
             'map': map_file,
             'params_file': navigation_params_file,
+            'odom_topic': odom_topic,
+            'cmd_vel_topic': cmd_vel_topic,
             'autostart': autostart,
             'use_respawn': use_respawn,
             'log_level': log_level,
@@ -88,8 +94,26 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time',
-            default_value='true',
+            default_value='false',
             description='Use simulation time'
+        ),
+        DeclareLaunchArgument(
+            'odom_topic',
+            default_value=PythonExpression([
+                "'/odom' if '",
+                use_sim_time,
+                "'.lower() in ['true', '1', 'yes'] else '/mirte_base_controller/odom'",
+            ]),
+            description='Odometry topic for Nav2. Defaults to /odom in simulation and /mirte_base_controller/odom on the real robot.'
+        ),
+        DeclareLaunchArgument(
+            'cmd_vel_topic',
+            default_value=PythonExpression([
+                "'/mirte_base_controller/cmd_vel_unstamped' if '",
+                use_sim_time,
+                "'.lower() in ['true', '1', 'yes'] else '/mirte_base_controller/cmd_vel'",
+            ]),
+            description='Topic where Nav2 controller commands are published. Defaults to /mirte_base_controller/cmd_vel_unstamped in simulation and /mirte_base_controller/cmd_vel on the real robot.'
         ),
         DeclareLaunchArgument(
             'map',
@@ -110,6 +134,11 @@ def generate_launch_description():
             'global_localization',
             default_value='false',
             description='Run global localization after startup'
+        ),
+        DeclareLaunchArgument(
+            'localization_bond_timeout',
+            default_value='15.0',
+            description='Seconds localization lifecycle manager waits for map_server/amcl bonds'
         ),
         DeclareLaunchArgument(
             'autostart',

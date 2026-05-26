@@ -1,7 +1,7 @@
 planner_server:
   ros__parameters:
     expected_planner_frequency: 2.0
-    use_sim_time: True
+    use_sim_time: false
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
@@ -11,11 +11,11 @@ planner_server:
 
 planner_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
 
 controller_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     controller_frequency: 5.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
@@ -34,26 +34,27 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.10
+      yaw_goal_tolerance: 0.15
     # DWB parameters
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
-      min_vel_x: 0.0
+      min_vel_x: -0.25
       min_vel_y: -0.05
-      max_vel_x: 0.15
+      max_vel_x: 0.25
       max_vel_y: 0.05
+      min_vel_theta: -0.5
       max_vel_theta: 0.5
       min_speed_xy: 0.0
-      max_speed_xy: 0.15
-      min_speed_theta: -0.5
-      acc_lim_x: 1.2
-      acc_lim_y: 0.5
-      acc_lim_theta: 2.0
-      decel_lim_x: -1.2
-      decel_lim_y: -0.5
-      decel_lim_theta: -2.0
+      max_speed_xy: 0.25
+      min_speed_theta: 0.0
+      acc_lim_x: 0.8
+      acc_lim_y: 0.2
+      acc_lim_theta: 1.2
+      decel_lim_x: -0.8
+      decel_lim_y: -0.2
+      decel_lim_theta: -1.2
       vx_samples: 15
       vy_samples: 5
       vtheta_samples: 15
@@ -61,8 +62,8 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 2.0
-      xy_goal_tolerance: 0.25
-      trans_stopped_velocity: 0.25
+      xy_goal_tolerance: 0.10
+      trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
@@ -80,7 +81,7 @@ controller_server:
 
 controller_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
 
 local_costmap:
   local_costmap:
@@ -89,7 +90,7 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_link
-      use_sim_time: True
+      use_sim_time: false
       rolling_window: True
       width: 3
       height: 3
@@ -98,8 +99,8 @@ local_costmap:
       plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 10.0
-        inflation_radius: 0.3
+        cost_scaling_factor: 12.0
+        inflation_radius: 0.25
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -126,7 +127,7 @@ global_costmap:
       publish_frequency: 0.5
       global_frame: map
       robot_base_frame: base_link
-      use_sim_time: True
+      use_sim_time: false
       footprint: "[ [0.12, 0.09], [0.12, -0.09], [-0.12, -0.09], [-0.12, 0.09] ]"
       resolution: 0.05
       track_unknown_space: true
@@ -150,18 +151,18 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 10.0
-        inflation_radius: 0.3
+        cost_scaling_factor: 12.0
+        inflation_radius: 0.22
       always_send_full_costmap: True
 
 map_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     # yaml_filename: "test_map.yaml" # Set by launch file
 
 map_saver:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     save_map_timeout: 5.0
     free_thresh_default: 0.25
     occupied_thresh_default: 0.65
@@ -169,10 +170,10 @@ map_saver:
 
 bt_navigator:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     global_frame: map
     robot_base_frame: base_link
-    odom_topic: odom
+    odom_topic: /mirte_base_controller/odom
     bt_loop_duration: 10
     default_server_timeout: 20
     # default_nav_to_pose_bt_xml: "navigate_to_pose_w_replanning_and_recovery.xml"
@@ -203,7 +204,7 @@ behavior_server:
     global_frame: odom
     robot_base_frame: base_link
     transform_tolerance: 1.0
-    use_sim_time: true
+    use_sim_time: false
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
     min_rotational_vel: 0.4
