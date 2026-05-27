@@ -90,7 +90,7 @@ def generate_launch_description():
         DeclareLaunchArgument('localization_params_file', default_value=default_localization_params),
         DeclareLaunchArgument('navigation_params_file', default_value=default_navigation_params),
         DeclareLaunchArgument('global_localization', default_value='false'),
-        DeclareLaunchArgument('localization_bond_timeout', default_value='15.0'),
+        DeclareLaunchArgument('localization_bond_timeout', default_value='100.0'),
         DeclareLaunchArgument('autostart', default_value='true'),
         DeclareLaunchArgument('use_respawn', default_value='false'),
         DeclareLaunchArgument('log_level', default_value='info'),

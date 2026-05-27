@@ -1,6 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, LogInfo, RegisterEventHandler
 from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
@@ -21,6 +22,20 @@ def generate_launch_description():
     log_level = LaunchConfiguration('log_level')
     launch_rviz = LaunchConfiguration('launch_rviz')
     rviz_config_file = LaunchConfiguration('rviz_config_file')
+
+    wait_for_localization = ExecuteProcess(
+        cmd=[
+            PathJoinSubstitution([
+                FindPackageShare('mdp_navigation'),
+                'scripts',
+                'wait_for_lifecycle_active.py'
+            ]),
+            '--nodes',
+            '/map_server',
+            '/amcl',
+        ],
+        output='screen',
+    )
 
     localization_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -73,6 +88,18 @@ def generate_launch_description():
             ('/tf', 'tf'),
             ('/tf_static', 'tf_static'),
         ],
+    )
+
+    start_navigation_after_localization = RegisterEventHandler(
+        OnProcessExit(
+            target_action=wait_for_localization,
+            on_exit=[
+                LogInfo(
+                    msg='Localization is active; starting navigation lifecycle nodes.'
+                ),
+                navigation_launch,
+            ],
+        )
     )
 
     default_localization_params = PathJoinSubstitution([
@@ -170,6 +197,7 @@ def generate_launch_description():
             description='RViz config file to use for combined localization and navigation'
         ),
         localization_launch,
-        navigation_launch,
+        wait_for_localization,
+        start_navigation_after_localization,
         rviz_node,
     ])
