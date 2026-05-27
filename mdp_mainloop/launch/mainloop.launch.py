@@ -9,7 +9,7 @@ def generate_launch_description():
             name='mdp_mainloop_node',
             output='screen',
             parameters=[
-                # {'param_name': 'param_value'},
+                {'use_sim_time': True},
             ]
         )
     ])
