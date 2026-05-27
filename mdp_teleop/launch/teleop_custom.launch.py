@@ -16,7 +16,7 @@ def generate_launch_description():
 
     joy_config_arg = DeclareLaunchArgument(
         'joy_config',
-        default_value='custom_ps4.yaml',
+        default_value='custom_ps5.yaml',
         description='Type of joystick config file to load (e.g., ps4, xbox)'
     )
 
