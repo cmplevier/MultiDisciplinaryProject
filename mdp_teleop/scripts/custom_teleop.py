@@ -34,8 +34,8 @@ class CustomTeleopJoy(Node):
         self.declare_parameter('btn_circle', 1)             # Wrist +
         self.declare_parameter('btn_square', 3)             # Wrist -
         
-        self.declare_parameter('arm_step_size', 0.05)
-        self.declare_parameter('arm_step_time', 0.15)
+        self.declare_parameter('arm_step_size', 0.15)
+        self.declare_parameter('arm_step_time', 0.20)
 
         # Joint Physical Limits [Pan, Lift, Elbow, Wrist]
         self.declare_parameter('limit_min', [-1.57, -1.57, -1.57, -1.57])
