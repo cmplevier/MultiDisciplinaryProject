@@ -14,6 +14,6 @@ teleop_joy_node:
     btn_enable: 5
     btn_enable_holonomic: 4
     
-    scale_linear_x: 0.5
-    scale_linear_y: 0.5
+    scale_linear_x: 0.35
+    scale_linear_y: 0.35
     scale_angular_z: 1.0 # 4.0
