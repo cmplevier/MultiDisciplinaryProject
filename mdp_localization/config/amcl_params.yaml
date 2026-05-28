@@ -26,8 +26,8 @@ amcl:
     always_reset_initial_pose: false
 
     initial_pose:
-      x: 0.0
-      y: 0.0
+      x: 1.0
+      y: 1.0
       z: 0.0
       yaw: 0.0
 
@@ -46,8 +46,8 @@ amcl:
     alpha5: 0.2
 
     # Update thresholds
-    update_min_d: 0.2
-    update_min_a: 0.2
+    update_min_d: 0.15
+    update_min_a: 0.05
 
     # Laser model
     laser_model_type: "likelihood_field"
