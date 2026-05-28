@@ -35,7 +35,7 @@ controller_server:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.12
-      yaw_goal_tolerance: 0.06
+      yaw_goal_tolerance: 0.08
     # DWB parameters
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
@@ -100,7 +100,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 12.0
-        inflation_radius: 0.25
+        inflation_radius: 0.20
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -138,7 +138,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 12.0
-        inflation_radius: 0.22
+        inflation_radius: 0.20
       always_send_full_costmap: True
 
 map_server:

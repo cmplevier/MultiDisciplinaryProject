@@ -11,6 +11,7 @@
   <depend>geometry_msgs</depend>
   <depend>nav2_msgs</depend>
   <depend>visualization_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>lupin_greenhouse_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>
