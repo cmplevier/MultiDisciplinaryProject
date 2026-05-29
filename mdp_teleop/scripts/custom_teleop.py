@@ -137,18 +137,18 @@ class CustomTeleopJoy(Node):
 
             # -- Joint 1: Shoulder Lift (D-pad Up/Down) --
             if msg.axes[self.axis_dpad_y] > 0.5:   # Up
-                new_positions[1] += self.arm_step
+                new_positions[1] -= self.arm_step
                 arm_command_triggered = True
             elif msg.axes[self.axis_dpad_y] < -0.5: # Down
-                new_positions[1] -= self.arm_step
+                new_positions[1] += self.arm_step
                 arm_command_triggered = True
 
             # -- Joint 2: Elbow (Triangle / Cross) --
             if msg.buttons[self.btn_triangle] == 1:
-                new_positions[2] += self.arm_step
+                new_positions[2] -= self.arm_step
                 arm_command_triggered = True
             elif msg.buttons[self.btn_cross] == 1:
-                new_positions[2] -= self.arm_step
+                new_positions[2] += self.arm_step
                 arm_command_triggered = True
 
             # -- Joint 3: Wrist (Circle / Square) --
