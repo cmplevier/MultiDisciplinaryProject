@@ -38,8 +38,8 @@ class CustomTeleopJoy(Node):
         self.declare_parameter('arm_step_time', 0.20)
 
         # Joint Physical Limits [Pan, Lift, Elbow, Wrist]
-        self.declare_parameter('limit_min', [-1.57, -1.57, -1.57, -1.57])
-        self.declare_parameter('limit_max', [ 1.57,  1.57,  1.57,  1.57])
+        self.declare_parameter('joint_limit_min', [-1.57, -1.57, -1.57, -1.57])
+        self.declare_parameter('joint_limit_max', [ 1.57,  1.57,  1.57,  1.57])
 
 
         # Get parameters
@@ -65,8 +65,8 @@ class CustomTeleopJoy(Node):
         self.arm_step = self.get_parameter('arm_step_size').value
         self.arm_time = self.get_parameter('arm_step_time').value
         
-        self.limit_min = self.get_parameter('limit_min').value
-        self.limit_max = self.get_parameter('limit_max').value
+        self.joint_limit_min = self.get_parameter('joint_limit_min').value
+        self.joint_limit_max = self.get_parameter('joint_limit_max').value
 
 
 
@@ -163,7 +163,7 @@ class CustomTeleopJoy(Node):
             if arm_command_triggered:
                 # Clamp all positions within defined limits
                 for i in range(len(new_positions)):
-                    new_positions[i] = max(self.limit_min[i], min(new_positions[i], self.limit_max[i]))
+                    new_positions[i] = max(self.joint_limit_min[i], min(new_positions[i], self.joint_limit_max[i]))
 
                 traj_msg = JointTrajectory()
                 traj_msg.joint_names = self.joint_names
