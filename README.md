@@ -182,6 +182,293 @@ odom_topic:=/odom|/mirte_base_controller/odom
 cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped|/mirte_base_controller/cmd_vel
 ```
 
+## Row Plan Authoring And Mission Execution
+
+The goal of this pipeline is to scan greenhouse rows from a discrete
+plan. For each row, the robot first navigates to an `approach_pose` using
+Nav2, then strafes directly to a `scan_end_pose` while scanning.
+
+The system is intentionally modular so each part can be tested
+separately before the robot moves:
+
+```text
+row_plan_builder_node
+  Used during authoring only.
+  Receives RViz arrows or JSON commands.
+  Writes ~/mdp_ws/generated_row_plan.json.
+  Publishes RViz markers so you can visually check the plan.
+
+row_plan_validator_node
+  Used after authoring.
+  Reads the generated JSON file.
+  Checks that rows, IDs, approach poses, and scan-end poses are valid.
+
+mdp_navigation stack
+  Starts simulation, localization, map server, Nav2, and RViz.
+  Provides /amcl_pose and the /navigate_to_pose action server.
+  Publishes Nav2 velocity commands for the approach motion.
+
+high_level_planner_node
+  Used during execution.
+  Reads ~/mdp_ws/generated_row_plan.json.
+  Chooses the next row, normally in JSON order.
+  Sends one row task at a time to mainloop_node.
+
+mainloop_node
+  Used during execution.
+  Receives row tasks from the planner.
+  Sends approach_pose to Nav2.
+  After Nav2 succeeds, publishes direct strafe velocity commands until
+  scan_end_pose is reached.
+```
+
+The data flow is:
+
+```text
+RViz arrows
+  -> row_plan_builder_node
+  -> generated_row_plan.json
+  -> row_plan_validator_node
+  -> high_level_planner_node
+  -> mainloop_node
+  -> Nav2 approach + direct strafe
+```
+
+The launch flow is split into two phases so pose creation and robot
+execution can be debugged separately:
+
+```text
+1. Author the row plan.
+   Create and inspect generated_row_plan.json. The robot does not move.
+
+2. Execute the finished plan.
+   Start navigation, start the planner/executor, then enable autonomy.
+```
+
+### 0. Build
+
+Run this after changing any package code or launch files:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-select mdp_mainloop mdp_navigation
+source install/setup.bash
+```
+
+### 1. Author The Row Plan
+
+This creates the JSON file only. It starts a map server, RViz, and the
+row-plan builder. It does not start Nav2 navigation or the mission
+executor, so the robot will not move.
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_mainloop row_plan_authoring.launch.py \
+  clear_plan:=true \
+  plan_path:=~/mdp_ws/generated_row_plan.json
+```
+
+The generated file is written here:
+
+```text
+~/mdp_ws/generated_row_plan.json
+```
+
+In RViz, use the two row-plan pose tools:
+
+```text
+Set Row Approach Pose -> /row_plan/approach_pose
+Set Row Goal Pose     -> /row_plan/scan_end_pose
+```
+
+The toolbar may show both as `2D Goal Pose`; check the Tool Properties
+panel if the labels are ambiguous (the left one is the approach one, while the right one is the goal strafing pose).
+
+For each row:
+
+```text
+1. Publish a row ID.
+2. Set the approach arrow where Nav2 should drive first.
+3. Set the goal / scan-end arrow where strafing should finish.
+```
+
+Example:
+
+```bash
+ros2 topic pub --once /row_plan/row_id std_msgs/String "{data: row_1}"
+```
+
+Then click-drag `Set Row Approach Pose`, then click-drag
+`Set Row Goal Pose`. Repeat with `row_2`, `row_3`, etc.
+
+The builder shows:
+
+```text
+blue arrow  = APPROACH
+green arrow = GOAL / SCAN END
+line        = connection between them
+```
+
+To check the file before running the robot:
+
+```bash
+cat ~/mdp_ws/generated_row_plan.json
+python3 -m json.tool ~/mdp_ws/generated_row_plan.json
+
+ros2 run mdp_mainloop row_plan_validator_node \
+  --ros-args -p plan_path:=~/mdp_ws/generated_row_plan.json
+```
+
+The validator reports the row order and any missing/invalid poses.
+
+### 2. Execute The Finished Plan
+
+Close the authoring launch with `Ctrl+C`. Before launching navigation,
+this command should not show `mdp_row_plan_builder_node` or
+`lifecycle_manager_row_plan_authoring`. If it does, the authoring launch
+is still running.
+
+```bash
+ros2 node list | grep -E "map_server|amcl|lifecycle|row_plan"
+```
+
+Terminal 1: start simulation, localization, Nav2, and RViz. Nav2 will
+publish approach-motion velocity commands to
+`/mirte_base_controller/cmd_vel_unstamped`.
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_navigation sim_nav_loc_rviz.launch.py \
+  use_sim_time:=true \
+  cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped
+```
+
+In RViz, set the robot's initial pose with `2D Pose Estimate` if AMCL
+does not already know where the robot is.
+
+Terminal 2: start only the mission planner and executor. The planner
+reads `generated_row_plan.json`; the executor sends Nav2 goals and later
+publishes strafe velocity commands to the same velocity topic.
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_mainloop mainloop.launch.py \
+  use_sim_time:=true \
+  clear_history:=true \
+  cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped \
+  generated_row_plan_path:=~/mdp_ws/generated_row_plan.json
+```
+
+This launch starts:
+
+```text
+mdp_high_level_planner_node  # reads generated_row_plan.json
+mdp_mainloop_node            # executes NAV + STRAFE tasks
+```
+
+If no row scores are published, the planner follows the order in the
+JSON file: first row, second row, third row, and so on.
+
+Terminal 3: check that the executor has a robot pose and is waiting for
+autonomy.
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/mdp_ws/install/setup.bash
+
+ros2 topic echo --once /amcl_pose
+ros2 topic echo --once /mainloop/status
+```
+
+If `/amcl_pose` does not print, use `2D Pose Estimate` in RViz and check
+again.
+
+Enable autonomy by publishing the enable message for a few seconds. This
+makes sure both the planner and executor receive it.
+
+```bash
+ros2 topic pub -r 2 /autonomous_enabled std_msgs/Bool "{data: true}"
+```
+
+Leave it running until `/mainloop/status` contains:
+
+```text
+"autonomous_enabled": true
+```
+
+Then stop the publisher with `Ctrl+C`. The mission should move from
+`TASK_READY` to `NAVIGATING_TO_APPROACH`, then later to `STRAFING_ROW`.
+
+Useful checks while running:
+
+```bash
+ros2 topic echo /mission_dashboard
+ros2 topic echo /planner/status
+ros2 topic echo /planner/discrete_state
+ros2 topic echo /planner/next_task
+ros2 topic echo /mainloop/status
+ros2 topic echo /mainloop/task_result
+ros2 topic echo /mirte_base_controller/cmd_vel_unstamped
+```
+
+If the dashboard says `EXECUTOR: TASK_READY` and no velocity appears,
+check:
+
+```bash
+ros2 topic echo --once /mainloop/status
+ros2 topic echo --once /amcl_pose
+```
+
+Common causes are:
+
+```text
+autonomous_enabled is false in /mainloop/status
+/amcl_pose is missing because the initial pose was not set
+Nav2 is not active yet
+generated_row_plan.json is missing or invalid
+```
+
+### Optional Dynamic Updates
+
+To add or replace one row dynamically:
+
+```bash
+ros2 topic pub --once /row_plan/set_row std_msgs/String \
+  "{data: '{\"id\": \"row_c\", \"approach_pose\": [1.0, 0.0, 1.57], \"scan_end_pose\": [1.0, 1.2, 1.57]}'}"
+```
+
+The builder writes the generated JSON file and publishes the full active
+plan on `/planner/row_plan`. The planner reloads that topic while
+running.
+
+Planner input can be published as JSON on `/planner/row_scores`:
+
+```bash
+ros2 topic pub --once /planner/row_scores std_msgs/String \
+  "{data: '{\"row_scores\": {\"row_a\": 0.1, \"row_b\": 0.9}}'}"
+```
+
+The planner will choose the highest-scored available row. To force a
+specific row:
+
+```bash
+ros2 topic pub --once /planner/row_scores std_msgs/String \
+  "{data: '{\"selected_row\": \"row_b\", \"force_rescan\": true}'}"
+```
+
+The executor reports status on `/mainloop/status` and task results on
+`/mainloop/task_result`. Autonomy is still gated by `/autonomous_enabled`.
+
 ## Environment
 
 - `ROS_DOMAIN_ID=0` — set in devcontainer, set manually if running natively

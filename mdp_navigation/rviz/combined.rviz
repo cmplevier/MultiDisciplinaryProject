@@ -397,6 +397,24 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /waypoint_markers
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Row Plan Builder Markers
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /row_plan/markers
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Mission Markers
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mission_markers
     - Alpha: 1
       Axes Length: 1
       Axes Radius: 0.10000000149011612
@@ -472,6 +490,22 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Name: Set Row Approach Pose
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /row_plan/approach_pose
+    - Class: rviz_default_plugins/SetGoal
+      Name: Set Row Goal Pose
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /row_plan/scan_end_pose
     - Class: nav2_rviz_plugins/GoalTool
     - Class: rviz_default_plugins/PublishPoint
       Single click: true
