@@ -14,6 +14,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 
 DEFAULT_PLAN = {
+    # The builder keeps the same shape on disk and on /planner/row_plan.
     'rows': [],
     'return_home_pose': None,
 }
@@ -26,12 +27,16 @@ class RowPlanBuilderNode(Node):
         super().__init__('mdp_row_plan_builder_node')
         self.get_logger().info('MDP row plan builder started')
 
+        # File inputs/outputs. plan_path is the generated mission file.
+        # seed_plan_path is only used as a fallback template.
         self.declare_parameter(
             'plan_path',
             '~/mdp_ws/generated_row_plan.json',
         )
         self.declare_parameter('seed_plan_path', '')
         self.declare_parameter('clear_on_start', False)
+
+        # Topic API for editing the plan.
         self.declare_parameter('set_row_topic', '/row_plan/set_row')
         self.declare_parameter('clear_plan_topic', '/row_plan/clear')
         self.declare_parameter(
@@ -73,9 +78,14 @@ class RowPlanBuilderNode(Node):
         else:
             self.plan = self.load_initial_plan()
         self.last_publish_time = 0.0
+
+        # RViz row capture is a two-step process:
+        # first store the approach pose, then commit the row on scan-end pose.
         self.pending_approach_pose = None
         self.pending_row_id = None
 
+        # Latch the full plan so a planner started later receives it
+        # immediately without waiting for the next periodic publish.
         latched_qos = QoSProfile(
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -93,6 +103,7 @@ class RowPlanBuilderNode(Node):
             10,
         )
 
+        # JSON command path: useful for scripts or terminal commands.
         self.set_row_sub = self.create_subscription(
             String,
             set_row_topic,
@@ -105,6 +116,8 @@ class RowPlanBuilderNode(Node):
             self.clear_plan_callback,
             10,
         )
+
+        # RViz path: set row ID, then use two pose-arrow tools.
         self.approach_pose_sub = self.create_subscription(
             PoseStamped,
             approach_pose_topic,
@@ -124,12 +137,15 @@ class RowPlanBuilderNode(Node):
             10,
         )
 
+        # Periodic publication keeps status and markers visible in RViz.
         self.timer = self.create_timer(0.5, self.timer_callback)
         self.save_plan()
         self.publish_plan(force=True)
 
     def load_initial_plan(self):
         """Load generated plan first, then seed file, then an empty plan."""
+        # Prefer continuing from the generated file so authoring sessions can
+        # be resumed. If it does not exist, fall back to the seed template.
         for path in [self.plan_path, self.seed_plan_path]:
             if not path:
                 continue
@@ -173,6 +189,9 @@ class RowPlanBuilderNode(Node):
             self.get_logger().warn('Row command must be a JSON object/list')
             return
 
+        # The JSON command can combine several operations in one message:
+        # clear, update return home, delete one row, replace all rows, or
+        # upsert a single row.
         if command.get('clear'):
             self.plan = DEFAULT_PLAN.copy()
 
@@ -205,6 +224,8 @@ class RowPlanBuilderNode(Node):
 
     def approach_pose_callback(self, msg):
         """Store the next approach pose for PoseStamped row capture."""
+        # This only stores half of a row. The row is not written until the
+        # matching scan-end pose arrives.
         self.pending_approach_pose = self.pose_stamped_to_list(msg)
         self.get_logger().info(
             f'Received approach pose for {self.next_capture_row_id()}'
@@ -218,6 +239,8 @@ class RowPlanBuilderNode(Node):
             )
             return
 
+        # The second arrow completes the row. After writing it, clear the
+        # pending state so the next pair of arrows creates a new row.
         row_id = self.next_capture_row_id()
         row = {
             'id': row_id,
@@ -232,6 +255,8 @@ class RowPlanBuilderNode(Node):
 
     def next_capture_row_id(self):
         """Return the row ID for the next PoseStamped capture."""
+        # If the user did not publish /row_plan/row_id, auto-name rows in
+        # insertion order. This keeps RViz-only authoring usable.
         if self.pending_row_id:
             return self.pending_row_id
         return f"row_{len(self.plan['rows']) + 1}"
@@ -269,6 +294,8 @@ class RowPlanBuilderNode(Node):
         if row is None:
             return
 
+        # Reusing an existing row ID updates that row instead of appending a
+        # duplicate. This makes correcting a pose straightforward.
         for index, existing_row in enumerate(self.plan['rows']):
             if existing_row['id'] == row['id']:
                 self.plan['rows'][index] = row
@@ -315,6 +342,9 @@ class RowPlanBuilderNode(Node):
 
         row_id = raw_row.get('id') or f'row_{index + 1}'
         approach_pose = self.parse_pose(raw_row.get('approach_pose'))
+
+        # goal_pose is a readable alias in the JSON. scan_end_pose is the
+        # executor-facing name used by mainloop_node.
         scan_end_pose = self.parse_pose(
             raw_row.get('scan_end_pose') or raw_row.get('goal_pose')
         )
@@ -391,6 +421,9 @@ class RowPlanBuilderNode(Node):
         stamp = self.get_clock().now().to_msg()
         for index, row in enumerate(self.plan['rows']):
             base_id = index * 20
+
+            # Blue = approach pose. Green = goal / scan-end pose.
+            # The line shows the intended strafe segment.
             marker_array.markers.append(
                 self.make_pose_marker(
                     'generated_approach_pose',
@@ -460,6 +493,8 @@ class RowPlanBuilderNode(Node):
             )
 
         if self.pending_approach_pose is not None:
+            # Yellow marker means the user has placed an approach pose, but
+            # still needs to place the matching scan-end pose.
             marker_array.markers.append(
                 self.make_arrow_marker(
                     'pending_approach_arrow',
@@ -576,6 +611,8 @@ class RowPlanBuilderNode(Node):
     @staticmethod
     def yaw_from_pose_stamped(msg):
         """Extract yaw from a PoseStamped quaternion."""
+        # RViz's 2D Goal/Pose tools encode the dragged arrow direction in
+        # the quaternion. The mission JSON stores that heading as planar yaw.
         q = msg.pose.orientation
         return math.atan2(
             2 * (q.w * q.z + q.x * q.y),

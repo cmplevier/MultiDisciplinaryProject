@@ -184,8 +184,66 @@ cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped|/mirte_base_controller/c
 
 ## Row Plan Authoring And Mission Execution
 
-The mission flow is split into two phases so pose creation and robot
-execution can be debugged separately.
+The goal of this pipeline is to scan greenhouse rows from a discrete
+plan. For each row, the robot first navigates to an `approach_pose` using
+Nav2, then strafes directly to a `scan_end_pose` while scanning.
+
+The system is intentionally modular so each part can be tested
+separately before the robot moves:
+
+```text
+row_plan_builder_node
+  Used during authoring only.
+  Receives RViz arrows or JSON commands.
+  Writes ~/mdp_ws/generated_row_plan.json.
+  Publishes RViz markers so you can visually check the plan.
+
+row_plan_validator_node
+  Used after authoring.
+  Reads the generated JSON file.
+  Checks that rows, IDs, approach poses, and scan-end poses are valid.
+
+mdp_navigation stack
+  Starts simulation, localization, map server, Nav2, and RViz.
+  Provides /amcl_pose and the /navigate_to_pose action server.
+  Publishes Nav2 velocity commands for the approach motion.
+
+high_level_planner_node
+  Used during execution.
+  Reads ~/mdp_ws/generated_row_plan.json.
+  Chooses the next row, normally in JSON order.
+  Sends one row task at a time to mainloop_node.
+
+mainloop_node
+  Used during execution.
+  Receives row tasks from the planner.
+  Sends approach_pose to Nav2.
+  After Nav2 succeeds, publishes direct strafe velocity commands until
+  scan_end_pose is reached.
+```
+
+The data flow is:
+
+```text
+RViz arrows
+  -> row_plan_builder_node
+  -> generated_row_plan.json
+  -> row_plan_validator_node
+  -> high_level_planner_node
+  -> mainloop_node
+  -> Nav2 approach + direct strafe
+```
+
+The launch flow is split into two phases so pose creation and robot
+execution can be debugged separately:
+
+```text
+1. Author the row plan.
+   Create and inspect generated_row_plan.json. The robot does not move.
+
+2. Execute the finished plan.
+   Start navigation, start the planner/executor, then enable autonomy.
+```
 
 ### 0. Build
 
