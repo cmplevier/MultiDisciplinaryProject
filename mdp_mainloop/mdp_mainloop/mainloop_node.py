@@ -47,6 +47,7 @@ class MainLoopNode(Node):
         self.autonomous_enabled = False
         self.segment_start_time = None
         self.nav_goal_handle = None
+        self._send_goal_future = None
         
         # Action client for Nav2
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -93,16 +94,25 @@ class MainLoopNode(Node):
         return 0 # Default to start if all done
 
     def enable_callback(self, msg):
-        if msg.data and not self.autonomous_enabled:
+        previous_enabled = self.autonomous_enabled
+        self.autonomous_enabled = msg.data
+
+        if self.autonomous_enabled and not previous_enabled:
             self.get_logger().info('>>> Autonomous Mode: ENABLED')
             if self.state == 'IDLE':
                 self.state = 'START_NEXT_SEGMENT'
-        elif not msg.data and self.autonomous_enabled:
+        elif not self.autonomous_enabled and previous_enabled:
             self.get_logger().info('<<< Autonomous Mode: DISABLED (Paused)')
-            self.cmd_vel_pub.publish(Twist())
+            # Immediately send stop command
+            stop_msg = Twist()
+            self.cmd_vel_pub.publish(stop_msg)
+            
+            # Cancel active Nav2 goal if it exists
             if self.nav_goal_handle is not None:
+                self.get_logger().info('Requesting Nav2 goal cancellation...')
                 self.nav_goal_handle.cancel_goal_async()
-        self.autonomous_enabled = msg.data
+            # If a goal was recently sent but handle is not yet available, 
+            # the goal_response_callback will handle it.
 
     def click_callback(self, msg):
         click_x, click_y = msg.point.x, msg.point.y
@@ -195,6 +205,10 @@ class MainLoopNode(Node):
         self.publish_dashboard()
         
         if not self.autonomous_enabled:
+            # If we were previously in a moving state, ensure we stay stopped until cancellation is complete
+            if self.nav_goal_handle is not None or self.state == 'STRAFING':
+                self.cmd_vel_pub.publish(Twist())
+                self.get_logger().info('Stopping robot and cancelling active tasks...', throttle_duration_sec=2.0)
             return
 
         if self.current_pose is None:
@@ -246,6 +260,13 @@ class MainLoopNode(Node):
             self.get_logger().error('Goal REJECTED by Nav2')
             self.state = 'START_NEXT_SEGMENT'
             return
+        
+        # If autonomous mode was disabled while waiting for acceptance
+        if not self.autonomous_enabled:
+            self.get_logger().warn('Goal accepted but autonomous mode is DISABLED. Cancelling immediately.')
+            self.nav_goal_handle.cancel_goal_async()
+            return
+
         self._get_result_future = self.nav_goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.get_result_callback)
 
@@ -291,8 +312,18 @@ class MainLoopNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = MainLoopNode()
-    try: rclpy.spin(node)
-    except KeyboardInterrupt: pass
-    finally: node.destroy_node(); rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        # Send a final stop command on exit
+        node.get_logger().info('MainLoopNode stopping... sending final stop command.')
+        stop_msg = Twist()
+        node.cmd_vel_pub.publish(stop_msg)
+        # Allow a small moment for the message to be sent
+        time.sleep(0.1)
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
-if __name__ == '__main__': main()
+if __name__ == '__main__':
+    main()
