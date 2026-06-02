@@ -82,9 +82,9 @@ def generate_launch_description():
             default_value=PythonExpression([
                 "'/mirte_base_controller/cmd_vel_unstamped' if '",
                 use_sim_time,
-                "'.lower() in ['true', '1', 'yes'] else '/mirte_base_controller/cmd_vel'",
+                "'.lower() in ['true', '1', 'yes'] else '/cmd_vel_nav'",
             ]),
-            description='Topic where Nav2 controller commands are published. Defaults to /mirte_base_controller/cmd_vel_unstamped in simulation and /mirte_base_controller/cmd_vel on the real robot.'
+            description='Topic where Nav2 controller commands are published. Defaults to /mirte_base_controller/cmd_vel_unstamped in simulation and /cmd_vel_nav on the real robot.'
         ),
         DeclareLaunchArgument('map', default_value=default_map_file),
         DeclareLaunchArgument('localization_params_file', default_value=default_localization_params),
