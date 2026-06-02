@@ -10,7 +10,8 @@ def generate_launch_description():
     # Launch Configurations
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
     map_file = LaunchConfiguration('map')
-    
+    cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
+
     # Default Map Path
     default_map_file = PathJoinSubstitution([
         FindPackageShare('mdp_localization'),
@@ -47,7 +48,7 @@ def generate_launch_description():
             'use_sim_time': use_sim_time,
             'map': map_file,
             'odom_topic': '/mirte_base_controller/odom',
-            'cmd_vel_topic': '/cmd_vel_nav', # Route through twist_mux
+            'cmd_vel_topic': cmd_vel_topic,
             'launch_rviz': 'true',
         }.items()
     )
@@ -63,7 +64,12 @@ def generate_launch_description():
             default_value=default_map_file,
             description='Full path to map yaml file'
         ),
-        
+        DeclareLaunchArgument(
+            'cmd_vel_topic',
+            default_value='/mirte_base_controller/cmd_vel_unstamped',
+            description='Velocity topic used by Nav2 in simulation'
+        ),
+
         gazebo_launch,
         nav_launch,
     ])

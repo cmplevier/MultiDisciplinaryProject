@@ -1,298 +1,494 @@
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
-from rclpy.qos import QoSProfile, DurabilityPolicy
-from geometry_msgs.msg import PoseStamped, Twist, PoseWithCovarianceStamped, PointStamped
-from nav2_msgs.action import NavigateToPose
-from visualization_msgs.msg import Marker, MarkerArray
-from std_msgs.msg import Bool, String
-import math
+"""Execute navigation and row-scan tasks selected by the planner node."""
+
 import json
-import os
+import math
 import time
-from datetime import datetime
+
+import rclpy
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
+from nav2_msgs.action import NavigateToPose
+from rclpy.action import ActionClient
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool, String
+
+
+NAV2_SUCCEEDED = 4
+
 
 class MainLoopNode(Node):
+    """Run one planner-provided task at a time."""
+
     def __init__(self):
         super().__init__('mdp_mainloop_node')
-        self.get_logger().info('MDP Persistent Mission Node with Debug Logs started')
+        self.get_logger().info('MDP mission executor started')
 
-        # Define mission segments
-        self.mission_segments = [
-            {'type': 'NAV',    'target': [1.439, -1.016, 2.506],  'id': 'APPROACH_ROW_A'},
-            {'type': 'STRAFE', 'target': [2.146, 0.189, 2.600],   'id': 'SCAN_ROW_A'},
-            {'type': 'NAV',    'target': [1.226, 0.798, -2.324],  'id': 'TRANSITION_TO_B'},
-            {'type': 'NAV', 'target': [0.073, -0.709, -0.560], 'id': 'SCAN_ROW_B'},
-            {'type': 'NAV',    'target': [1.439, -1.016, 2.506],  'id': 'RETURN_HOME'}
-        ]
-
-        # Persistence setup
-        self.db_path = os.path.expanduser('~/mdp_ws/mission_history.json')
-
-        # Parameters
         self.declare_parameter('cmd_vel_topic', '/cmd_vel_nav')
-        self.declare_parameter('clear_history', False)
-        
+        self.declare_parameter('task_topic', '/planner/next_task')
+        self.declare_parameter('status_topic', '/mainloop/status')
+        self.declare_parameter('result_topic', '/mainloop/task_result')
+        self.declare_parameter('strafe_tolerance', 0.15)
+        self.declare_parameter('strafe_gain', 0.2)
+        self.declare_parameter('yaw_gain', 0.5)
+        self.declare_parameter('max_strafe_speed', 0.1)
+        self.declare_parameter('max_yaw_rate', 0.5)
+
         cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
-        clear_history = self.get_parameter('clear_history').value
+        task_topic = self.get_parameter('task_topic').value
+        status_topic = self.get_parameter('status_topic').value
+        result_topic = self.get_parameter('result_topic').value
 
-        if clear_history:
-            if os.path.exists(self.db_path):
-                os.remove(self.db_path)
-                self.get_logger().info('Mission history cleared by parameter.')
-        
-        self.load_history()
-
-        self.current_segment_idx = self.get_first_incomplete_segment()
-        self.autonomous_enabled = False
-        self.segment_start_time = None
-        self.nav_goal_handle = None
-        
-        # Action client for Nav2
-        self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
-        
-        # Publishers
-        self.cmd_vel_pub = self.create_publisher(Twist, cmd_vel_topic, 10)
-        self.marker_pub = self.create_publisher(MarkerArray, '/mission_markers', 10)
-        self.dashboard_pub = self.create_publisher(String, '/mission_dashboard', 10)
-        
-        # Subscribers
-        amcl_qos = QoSProfile(durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, depth=1)
-        self.pose_sub = self.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', self.pose_callback, amcl_qos)
-        self.enable_sub = self.create_subscription(Bool, '/autonomous_enabled', self.enable_callback, 10)
-        self.click_sub = self.create_subscription(PointStamped, '/clicked_point', self.click_callback, 10)
+        self.strafe_tolerance = self.get_parameter(
+            'strafe_tolerance').value
+        self.strafe_gain = self.get_parameter('strafe_gain').value
+        self.yaw_gain = self.get_parameter('yaw_gain').value
+        self.max_strafe_speed = self.get_parameter(
+            'max_strafe_speed').value
+        self.max_yaw_rate = self.get_parameter('max_yaw_rate').value
 
         self.current_pose = None
-        self.state = 'IDLE'
+        self.current_task = None
+        self.task_start_time = None
+        self.autonomous_enabled = False
+        self.state = 'WAITING_FOR_TASK'
+        self.nav_goal_handle = None
+        self.nav_phase = None
+        self.canceling_for_pause = False
         self.strafe_start_yaw = 0.0
-        
+        self.last_status_time = 0.0
+
+        self.nav_client = ActionClient(
+            self,
+            NavigateToPose,
+            'navigate_to_pose',
+        )
+
+        self.cmd_vel_pub = self.create_publisher(Twist, cmd_vel_topic, 10)
+        self.status_pub = self.create_publisher(String, status_topic, 10)
+        self.result_pub = self.create_publisher(String, result_topic, 10)
+
+        amcl_qos = QoSProfile(
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+            depth=1,
+        )
+        self.pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped,
+            '/amcl_pose',
+            self.pose_callback,
+            amcl_qos,
+        )
+        self.enable_sub = self.create_subscription(
+            Bool,
+            '/autonomous_enabled',
+            self.enable_callback,
+            10,
+        )
+        self.task_sub = self.create_subscription(
+            String,
+            task_topic,
+            self.task_callback,
+            10,
+        )
+
         self.timer = self.create_timer(0.05, self.control_loop)
-
-    def load_history(self):
-        if os.path.exists(self.db_path):
-            try:
-                with open(self.db_path, 'r') as f:
-                    self.history = json.load(f)
-            except:
-                self.history = {}
-        else:
-            self.history = {}
-
-    def save_history(self, segment_id):
-        self.history[segment_id] = {
-            'completed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'duration': f"{time.time() - self.segment_start_time:.1f}s"
-        }
-        with open(self.db_path, 'w') as f:
-            json.dump(self.history, f, indent=4)
-
-    def get_first_incomplete_segment(self):
-        for i, seg in enumerate(self.mission_segments):
-            if seg['id'] not in self.history:
-                return i
-        return 0 # Default to start if all done
-
-    def enable_callback(self, msg):
-        if msg.data and not self.autonomous_enabled:
-            self.get_logger().info('>>> Autonomous Mode: ENABLED')
-            if self.state == 'IDLE':
-                self.state = 'START_NEXT_SEGMENT'
-        elif not msg.data and self.autonomous_enabled:
-            self.get_logger().info('<<< Autonomous Mode: DISABLED (Paused)')
-            self.cmd_vel_pub.publish(Twist())
-            if self.nav_goal_handle is not None:
-                self.nav_goal_handle.cancel_goal_async()
-        self.autonomous_enabled = msg.data
-
-    def click_callback(self, msg):
-        click_x, click_y = msg.point.x, msg.point.y
-        best_dist, best_idx = float('inf'), self.current_segment_idx
-        
-        for i, seg in enumerate(self.mission_segments):
-            t = seg['target']
-            dist = math.sqrt((click_x - t[0])**2 + (click_y - t[1])**2)
-            if dist < best_dist:
-                best_dist, best_idx = dist, i
-        
-        if best_dist < 2.0:
-            seg_id = self.mission_segments[best_idx]['id']
-            self.get_logger().info(f"Manual Task Selection: {seg_id}")
-            
-            # Cancel current work
-            if self.nav_goal_handle is not None:
-                self.nav_goal_handle.cancel_goal_async()
-            
-            self.current_segment_idx = best_idx
-            if seg_id in self.history:
-                del self.history[seg_id]
-            
-            if self.autonomous_enabled:
-                self.state = 'START_NEXT_SEGMENT'
-            self.publish_markers()
-            self.publish_dashboard()
+        self.publish_status(force=True)
 
     def pose_callback(self, msg):
+        """Store the latest AMCL pose."""
         self.current_pose = msg.pose.pose
 
-    def publish_dashboard(self):
-        db_lines = ["--- GREENHOUSE SCAN DASHBOARD ---"]
-        db_lines.append(f"STATUS: {'[RUNNING]' if self.autonomous_enabled else '[PAUSED/TELEOP]'}")
-        db_lines.append(f"STATE: {self.state}")
-        db_lines.append("")
-        for i, seg in enumerate(self.mission_segments):
-            status = "[DONE]" if seg['id'] in self.history else "[    ]"
-            if i == self.current_segment_idx and self.autonomous_enabled:
-                status = "[ >> ]"
-            elif i == self.current_segment_idx:
-                status = "[NEXT]"
-            line = f"{status} {seg['id']} ({seg['type']})"
-            if seg['id'] in self.history:
-                line += f" - {self.history[seg['id']]['duration']}"
-            db_lines.append(line)
-        msg = String()
-        msg.data = "\n".join(db_lines)
-        self.dashboard_pub.publish(msg)
+    def enable_callback(self, msg):
+        """Pause or resume the executor."""
+        was_enabled = self.autonomous_enabled
+        self.autonomous_enabled = msg.data
 
-    def publish_markers(self):
-        marker_array = MarkerArray()
-        for i, segment in enumerate(self.mission_segments):
-            target = segment['target']
-            marker = Marker()
-            marker.header.frame_id, marker.header.stamp = "map", self.get_clock().now().to_msg()
-            marker.ns, marker.id, marker.type, marker.action = "mission_targets", i, Marker.SPHERE, Marker.ADD
-            marker.pose.position.x, marker.pose.position.y, marker.pose.position.z = float(target[0]), float(target[1]), 0.05
-            marker.pose.orientation.w, marker.scale.x, marker.scale.y, marker.scale.z = 1.0, 0.2, 0.2, 0.2
-            marker.color.a = 0.8
-            if segment['id'] in self.history:
-                marker.color.r, marker.color.g, marker.color.b = 0.3, 0.3, 0.3
-            elif i == self.current_segment_idx:
-                marker.color.r, marker.color.g, marker.color.b, marker.scale.x, marker.scale.y, marker.scale.z = 0.0, 1.0, 0.0, 0.3, 0.3, 0.3
-            else:
-                marker.color.r, marker.color.g, marker.color.b = 1.0, 0.5, 0.0
-            marker_array.markers.append(marker)
+        if self.autonomous_enabled and not was_enabled:
+            self.get_logger().info('>>> Autonomous Mode: ENABLED')
+            if self.current_task is not None:
+                self.state = 'TASK_READY'
+        elif not self.autonomous_enabled and was_enabled:
+            self.get_logger().info('<<< Autonomous Mode: DISABLED (Paused)')
+            self.stop_robot()
+            if self.nav_goal_handle is not None:
+                self.canceling_for_pause = True
+                self.nav_goal_handle.cancel_goal_async()
+            if self.current_task is not None:
+                self.state = 'PAUSED'
 
-            yaw = target[2]
-            if yaw is not None:
-                arrow = Marker()
-                arrow.header.frame_id, arrow.header.stamp = "map", self.get_clock().now().to_msg()
-                arrow.ns, arrow.id, arrow.type, arrow.action = "wanted_poses", i, Marker.ARROW, Marker.ADD
-                arrow.pose.position.x, arrow.pose.position.y, arrow.pose.position.z = float(target[0]), float(target[1]), 0.1
-                arrow.pose.orientation.z, arrow.pose.orientation.w = math.sin(yaw / 2.0), math.cos(yaw / 2.0)
-                arrow.scale.x, arrow.scale.y, arrow.scale.z, arrow.color.a = 0.4, 0.05, 0.05, 1.0
-                arrow.color.r, arrow.color.g, arrow.color.b = marker.color.r, marker.color.g, marker.color.b
-                marker_array.markers.append(arrow)
+        self.publish_status(force=True)
 
-            label = Marker()
-            label.header.frame_id, label.header.stamp = "map", self.get_clock().now().to_msg()
-            label.ns, label.id, label.type, label.action = "mission_labels", i, Marker.TEXT_VIEW_FACING, Marker.ADD
-            label.pose.position.x, label.pose.position.y, label.pose.position.z = float(target[0]), float(target[1]), 0.4
-            label.scale.z, label.color.a, label.color.r, label.color.g, label.color.b, label.text = 0.15, 1.0, 1.0, 1.0, 1.0, segment['id']
-            marker_array.markers.append(label)
-        self.marker_pub.publish(marker_array)
+    def task_callback(self, msg):
+        """Accept a planner task if the executor is idle."""
+        task = self.parse_task(msg.data)
+        if task is None:
+            return
+
+        if self.current_task is not None:
+            current_id = self.current_task['task_id']
+            if task['task_id'] != current_id:
+                self.get_logger().warn(
+                    f"Ignoring task {task['task_id']}; "
+                    f"executor is busy with {current_id}"
+                )
+            return
+
+        self.current_task = task
+        self.task_start_time = None
+        self.nav_phase = None
+        self.state = 'TASK_READY'
+        self.get_logger().info(
+            f"Accepted task {task['task_id']} ({task['type']})"
+        )
+        self.publish_status(force=True)
+
+    def parse_task(self, raw_data):
+        """Parse and normalize a JSON task message."""
+        try:
+            task = json.loads(raw_data)
+        except json.JSONDecodeError as exc:
+            self.get_logger().error(f'Invalid task JSON: {exc}')
+            return None
+
+        if not isinstance(task, dict):
+            self.get_logger().error('Task message must be a JSON object')
+            return None
+
+        task_type = str(task.get('type', 'SCAN_ROW')).upper()
+        task_id = task.get('task_id') or task.get('id')
+        if not task_id:
+            self.get_logger().error('Task is missing task_id')
+            return None
+
+        normalized = {
+            'task_id': str(task_id),
+            'type': task_type,
+            'row_id': task.get('row_id'),
+            'frame_id': task.get('frame_id', 'map'),
+        }
+
+        if task_type == 'SCAN_ROW':
+            approach_pose = self.parse_pose(task.get('approach_pose'))
+            scan_end_pose = self.parse_pose(task.get('scan_end_pose'))
+            if approach_pose is None or scan_end_pose is None:
+                self.get_logger().error(
+                    f"SCAN_ROW task {task_id} needs approach_pose "
+                    'and scan_end_pose'
+                )
+                return None
+            normalized['approach_pose'] = approach_pose
+            normalized['scan_end_pose'] = scan_end_pose
+        elif task_type == 'NAV_ONLY':
+            goal_pose = (
+                task.get('goal_pose')
+                or task.get('target_pose')
+                or task.get('approach_pose')
+            )
+            goal_pose = self.parse_pose(goal_pose)
+            if goal_pose is None:
+                self.get_logger().error(
+                    f'NAV_ONLY task {task_id} needs goal_pose'
+                )
+                return None
+            normalized['goal_pose'] = goal_pose
+        else:
+            self.get_logger().error(f'Unsupported task type: {task_type}')
+            return None
+
+        return normalized
+
+    @staticmethod
+    def parse_pose(raw_pose):
+        """Return [x, y, yaw] from a task pose field."""
+        if not isinstance(raw_pose, (list, tuple)) or len(raw_pose) < 2:
+            return None
+
+        try:
+            x = float(raw_pose[0])
+            y = float(raw_pose[1])
+            yaw = None if len(raw_pose) < 3 else float(raw_pose[2])
+        except (TypeError, ValueError):
+            return None
+
+        return [x, y, yaw]
 
     def control_loop(self):
-        self.publish_markers()
-        self.publish_dashboard()
-        
+        """Advance the active task state machine."""
+        self.publish_status()
+
         if not self.autonomous_enabled:
             return
 
-        if self.current_pose is None:
-            self.get_logger().warn('Waiting for robot pose on /amcl_pose...', throttle_duration_sec=2.0)
+        if self.current_task is None:
+            self.state = 'WAITING_FOR_TASK'
             return
 
-        if self.state == 'START_NEXT_SEGMENT':
+        if self.current_pose is None:
+            self.get_logger().warn(
+                'Waiting for robot pose on /amcl_pose...',
+                throttle_duration_sec=2.0,
+            )
+            return
 
-            if self.current_segment_idx >= len(self.mission_segments):
-                self.get_logger().info('Loop Finished. Restarting...')
-                self.current_segment_idx, self.history = 0, {}
-                if os.path.exists(self.db_path): os.remove(self.db_path)
-            
-            seg = self.mission_segments[self.current_segment_idx]
-            self.segment_start_time = time.time()
-            if seg['type'] == 'NAV':
-                self.get_logger().info(f"Task Start: {seg['id']} (Navigating)")
-                self.start_nav_to_target(seg['target'])
-                self.state = 'NAVIGATING'
-            elif seg['type'] == 'STRAFE':
-                self.get_logger().info(f"Task Start: {seg['id']} (Strafing)")
-                self.strafe_start_yaw = self.get_yaw_from_pose(self.current_pose)
-                self.state = 'STRAFING'
-
-        elif self.state == 'STRAFING':
+        if self.state == 'TASK_READY':
+            self.start_current_task()
+        elif self.state == 'STRAFING_ROW':
             self.perform_strafe()
 
-    def start_nav_to_target(self, target):
+    def start_current_task(self):
+        """Start or restart the current task."""
+        if self.current_task is None:
+            return
+
+        if self.task_start_time is None:
+            self.task_start_time = time.time()
+
+        task = self.current_task
+        if task['type'] == 'SCAN_ROW':
+            self.get_logger().info(
+                f"Task Start: {task['task_id']} "
+                '(navigating to scan start)'
+            )
+            self.state = 'NAVIGATING_TO_APPROACH'
+            self.start_nav_to_pose(task['approach_pose'], 'approach')
+        elif task['type'] == 'NAV_ONLY':
+            self.get_logger().info(
+                f"Task Start: {task['task_id']} (navigating)"
+            )
+            self.state = 'NAVIGATING_TO_GOAL'
+            self.start_nav_to_pose(task['goal_pose'], 'goal')
+
+        self.publish_status(force=True)
+
+    def start_nav_to_pose(self, pose, phase):
+        """Send a Nav2 NavigateToPose goal."""
         goal = NavigateToPose.Goal()
-        goal.pose.header.frame_id, goal.pose.header.stamp = 'map', self.get_clock().now().to_msg()
-        goal.pose.pose.position.x, goal.pose.pose.position.y = float(target[0]), float(target[1])
-        yaw = target[2]
+        goal.pose.header.frame_id = self.current_task.get('frame_id', 'map')
+        goal.pose.header.stamp = self.get_clock().now().to_msg()
+        goal.pose.pose.position.x = float(pose[0])
+        goal.pose.pose.position.y = float(pose[1])
+
+        yaw = pose[2]
         if yaw is not None:
-            goal.pose.pose.orientation.z, goal.pose.pose.orientation.w = math.sin(yaw / 2.0), math.cos(yaw / 2.0)
+            goal.pose.pose.orientation.z = math.sin(yaw / 2.0)
+            goal.pose.pose.orientation.w = math.cos(yaw / 2.0)
         else:
             goal.pose.pose.orientation = self.current_pose.orientation
-        
+
         if not self.nav_client.wait_for_server(timeout_sec=1.0):
-            self.get_logger().error('Nav2 action server not available! Skipping NAV task.')
-            self.state = 'START_NEXT_SEGMENT'
+            self.get_logger().error('Nav2 action server not available')
+            self.finish_current_task(False, 'nav2_action_server_unavailable')
             return
 
-        self._send_goal_future = self.nav_client.send_goal_async(goal)
-        self._send_goal_future.add_done_callback(self.goal_response_callback)
+        self.nav_phase = phase
+        send_goal_future = self.nav_client.send_goal_async(goal)
+        send_goal_future.add_done_callback(self.goal_response_callback)
 
     def goal_response_callback(self, future):
-        self.nav_goal_handle = future.result()
-        if not self.nav_goal_handle.accepted:
-            self.get_logger().error('Goal REJECTED by Nav2')
-            self.state = 'START_NEXT_SEGMENT'
+        """Handle Nav2 accepting or rejecting the goal."""
+        if self.current_task is None:
             return
-        self._get_result_future = self.nav_goal_handle.get_result_async()
-        self._get_result_future.add_done_callback(self.get_result_callback)
 
-    def get_result_callback(self, future):
-        status = future.result().status
-        if status == 4: # SUCCEEDED
-            self.get_logger().info(f"Task Complete: {self.mission_segments[self.current_segment_idx]['id']}")
-            self.save_history(self.mission_segments[self.current_segment_idx]['id'])
-            self.current_segment_idx += 1
-        else:
-            self.get_logger().warn(f"Task Ended with status {status}")
-            # If aborted/cancelled, we stay on this index to allow retry
-        
+        try:
+            self.nav_goal_handle = future.result()
+        except Exception as exc:  # noqa: B902
+            self.get_logger().error(f'Nav2 goal request failed: {exc}')
+            self.finish_current_task(False, 'nav_goal_request_failed')
+            return
+
+        if not self.nav_goal_handle.accepted:
+            self.get_logger().error('Goal rejected by Nav2')
+            self.finish_current_task(False, 'nav_goal_rejected')
+            return
+
+        result_future = self.nav_goal_handle.get_result_async()
+        result_future.add_done_callback(self.nav_result_callback)
+
+    def nav_result_callback(self, future):
+        """Handle the final result from Nav2."""
+        if self.current_task is None:
+            return
+
+        try:
+            result = future.result()
+            status = result.status
+        except Exception as exc:  # noqa: B902
+            self.get_logger().error(f'Nav2 result failed: {exc}')
+            self.finish_current_task(False, 'nav_result_failed')
+            return
+
         self.nav_goal_handle = None
-        self.state = 'START_NEXT_SEGMENT'
+        phase = self.nav_phase
+        self.nav_phase = None
+
+        if self.canceling_for_pause or not self.autonomous_enabled:
+            self.canceling_for_pause = False
+            self.state = 'PAUSED'
+            self.get_logger().info('Navigation paused')
+            self.publish_status(force=True)
+            return
+
+        if status != NAV2_SUCCEEDED:
+            self.get_logger().warn(f'Nav2 ended with status {status}')
+            self.finish_current_task(False, f'nav_status_{status}')
+            return
+
+        if phase == 'approach' and self.current_task['type'] == 'SCAN_ROW':
+            self.get_logger().info(
+                f"Reached scan start for {self.current_task['task_id']}"
+            )
+            self.strafe_start_yaw = self.get_yaw_from_pose(
+                self.current_pose
+            )
+            self.state = 'STRAFING_ROW'
+            self.publish_status(force=True)
+            return
+
+        self.finish_current_task(True, 'completed')
 
     def perform_strafe(self):
-        target = self.mission_segments[self.current_segment_idx]['target']
-        dx, dy = target[0] - self.current_pose.position.x, target[1] - self.current_pose.position.y
-        dist = math.sqrt(dx**2 + dy**2)
-        if dist < 0.15:
-            self.get_logger().info(f"Task Complete: {self.mission_segments[self.current_segment_idx]['id']}")
-            self.cmd_vel_pub.publish(Twist())
-            self.save_history(self.mission_segments[self.current_segment_idx]['id'])
-            self.current_segment_idx += 1
-            self.state = 'START_NEXT_SEGMENT'
+        """Drive directly toward the row scan end pose."""
+        target = self.current_task['scan_end_pose']
+        dx = target[0] - self.current_pose.position.x
+        dy = target[1] - self.current_pose.position.y
+        dist = math.sqrt(dx ** 2 + dy ** 2)
+
+        if dist < self.strafe_tolerance:
+            self.get_logger().info(
+                f"Task Complete: {self.current_task['task_id']}"
+            )
+            self.stop_robot()
+            self.finish_current_task(True, 'completed')
             return
+
         yaw = self.get_yaw_from_pose(self.current_pose)
-        ex, ey = dx * math.cos(yaw) + dy * math.sin(yaw), -dx * math.sin(yaw) + dy * math.cos(yaw)
+        ex = dx * math.cos(yaw) + dy * math.sin(yaw)
+        ey = -dx * math.sin(yaw) + dy * math.cos(yaw)
+
+        target_yaw = target[2]
+        if target_yaw is None:
+            target_yaw = self.strafe_start_yaw
+        yaw_error = (target_yaw - yaw + math.pi) % (2 * math.pi) - math.pi
+
         twist = Twist()
-        twist.linear.x = max(min(ex * 0.2, 0.1), -0.1)
-        twist.linear.y = max(min(ey * 0.2, 0.1), -0.1)
-        ty = target[2] if target[2] is not None else self.strafe_start_yaw
-        ye = (ty - yaw + math.pi) % (2 * math.pi) - math.pi
-        twist.angular.z = ye * 0.5
-        self.get_logger().info(f"Strafing: dist={dist:.2f}m, local_err=({ex:.2f}, {ey:.2f}), cmd=({twist.linear.x:.2f}, {twist.linear.y:.2f})", throttle_duration_sec=1.0)
+        twist.linear.x = self.clamp(
+            ex * self.strafe_gain,
+            -self.max_strafe_speed,
+            self.max_strafe_speed,
+        )
+        twist.linear.y = self.clamp(
+            ey * self.strafe_gain,
+            -self.max_strafe_speed,
+            self.max_strafe_speed,
+        )
+        twist.angular.z = self.clamp(
+            yaw_error * self.yaw_gain,
+            -self.max_yaw_rate,
+            self.max_yaw_rate,
+        )
+
+        self.get_logger().info(
+            f"Strafing: dist={dist:.2f}m, "
+            f"local_err=({ex:.2f}, {ey:.2f}), "
+            f"cmd=({twist.linear.x:.2f}, {twist.linear.y:.2f})",
+            throttle_duration_sec=1.0,
+        )
         self.cmd_vel_pub.publish(twist)
 
-    def get_yaw_from_pose(self, pose):
+    def finish_current_task(self, success, reason):
+        """Publish a task result and return to idle."""
+        if self.current_task is None:
+            return
+
+        self.stop_robot()
+        duration = 0.0
+        if self.task_start_time is not None:
+            duration = time.time() - self.task_start_time
+
+        task = self.current_task
+        result = {
+            'task_id': task['task_id'],
+            'row_id': task.get('row_id'),
+            'task_type': task['type'],
+            'success': bool(success),
+            'reason': reason,
+            'duration': round(duration, 2),
+        }
+        msg = String()
+        msg.data = json.dumps(result)
+        self.result_pub.publish(msg)
+
+        if success:
+            self.get_logger().info(
+                f"Task Result: {task['task_id']} succeeded"
+            )
+        else:
+            self.get_logger().warn(
+                f"Task Result: {task['task_id']} failed ({reason})"
+            )
+
+        self.current_task = None
+        self.task_start_time = None
+        self.nav_phase = None
+        self.canceling_for_pause = False
+        self.state = 'WAITING_FOR_TASK'
+        self.publish_status(force=True)
+
+    def publish_status(self, force=False):
+        """Publish executor status for the planner."""
+        now = time.time()
+        if not force and now - self.last_status_time < 0.5:
+            return
+
+        self.last_status_time = now
+        status = {
+            'state': self.state,
+            'busy': self.current_task is not None,
+            'autonomous_enabled': self.autonomous_enabled,
+            'task_id': None,
+            'row_id': None,
+            'task_type': None,
+        }
+        if self.current_task is not None:
+            status['task_id'] = self.current_task['task_id']
+            status['row_id'] = self.current_task.get('row_id')
+            status['task_type'] = self.current_task['type']
+
+        msg = String()
+        msg.data = json.dumps(status)
+        self.status_pub.publish(msg)
+
+    def stop_robot(self):
+        """Publish a zero velocity command."""
+        self.cmd_vel_pub.publish(Twist())
+
+    @staticmethod
+    def clamp(value, minimum, maximum):
+        """Clamp a numeric value."""
+        return max(min(value, maximum), minimum)
+
+    @staticmethod
+    def get_yaw_from_pose(pose):
+        """Extract planar yaw from a quaternion pose."""
         q = pose.orientation
-        return math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+        return math.atan2(
+            2 * (q.w * q.z + q.x * q.y),
+            1 - 2 * (q.y * q.y + q.z * q.z),
+        )
+
 
 def main(args=None):
+    """Run the mainloop executor node."""
     rclpy.init(args=args)
     node = MainLoopNode()
-    try: rclpy.spin(node)
-    except KeyboardInterrupt: pass
-    finally: node.destroy_node(); rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
-if __name__ == '__main__': main()
+
+if __name__ == '__main__':
+    main()
