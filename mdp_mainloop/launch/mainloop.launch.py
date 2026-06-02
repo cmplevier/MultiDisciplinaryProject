@@ -3,17 +3,23 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
     clear_history = LaunchConfiguration('clear_history')
+    plan_path = LaunchConfiguration('plan_path')
+    load_plan_file = LaunchConfiguration('load_plan_file')
+    require_plan_file = LaunchConfiguration('require_plan_file')
+    loop_mission = LaunchConfiguration('loop_mission')
+    task_topic = LaunchConfiguration('task_topic')
 
     return LaunchDescription([
         DeclareLaunchArgument(
             'use_sim_time',
             default_value='true',
             description='Use simulation (Gazebo) clock if true'),
-        
+
         DeclareLaunchArgument(
             'cmd_vel_topic',
             default_value='/cmd_vel_nav',
@@ -24,6 +30,33 @@ def generate_launch_description():
             default_value='false',
             description='Clear mission history on startup'),
 
+        DeclareLaunchArgument(
+            'plan_path',
+            default_value='~/mdp_ws/generated_row_plan.json',
+            description='JSON row plan to execute in order'),
+
+        DeclareLaunchArgument(
+            'load_plan_file',
+            default_value='true',
+            description=(
+                'Load plan_path directly instead of only waiting for tasks'
+            )),
+
+        DeclareLaunchArgument(
+            'require_plan_file',
+            default_value='false',
+            description='Log an error if plan_path is missing'),
+
+        DeclareLaunchArgument(
+            'loop_mission',
+            default_value='false',
+            description='Restart the JSON plan after all tasks finish'),
+
+        DeclareLaunchArgument(
+            'task_topic',
+            default_value='/planner/next_task',
+            description='JSON task topic used when load_plan_file is false'),
+
         Node(
             package='mdp_mainloop',
             executable='mainloop_node',
@@ -33,6 +66,11 @@ def generate_launch_description():
                 {'use_sim_time': use_sim_time},
                 {'cmd_vel_topic': cmd_vel_topic},
                 {'clear_history': clear_history},
+                {'plan_path': plan_path},
+                {'load_plan_file': load_plan_file},
+                {'require_plan_file': require_plan_file},
+                {'loop_mission': loop_mission},
+                {'task_topic': task_topic},
             ]
         )
     ])
