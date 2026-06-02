@@ -507,26 +507,26 @@ class MainLoopNode(Node):
             self.perform_strafe()
 
     def pose_is_ready(self):
-        """Check whether AMCL pose exists and is fresh enough."""
-        if self.current_pose is None or self.last_pose_time is None:
-            self.get_logger().warn(
-                'Waiting for robot pose on /amcl_pose...',
-                throttle_duration_sec=2.0,
-            )
-            return False
+    #     """Check whether AMCL pose exists and is fresh enough."""
+    #     if self.current_pose is None or self.last_pose_time is None:
+    #         self.get_logger().warn(
+    #             'Waiting for robot pose on /amcl_pose...',
+    #             throttle_duration_sec=2.0,
+    #         )
+    #         return False
 
-        if self.pose_timeout_sec <= 0.0:
-            return True
+    #     if self.pose_timeout_sec <= 0.0:
+    #         return True
 
-        age = (
-            self.get_clock().now() - self.last_pose_time
-        ).nanoseconds / 1e9
-        if age > self.pose_timeout_sec:
-            self.get_logger().warn(
-                f'Robot pose is stale ({age:.2f}s old)',
-                throttle_duration_sec=2.0,
-            )
-            return False
+    #     age = (
+    #         self.get_clock().now() - self.last_pose_time
+    #     ).nanoseconds / 1e9
+    #     if age > self.pose_timeout_sec:
+    #         self.get_logger().warn(
+    #             f'Robot pose is stale ({age:.2f}s old)',
+    #             throttle_duration_sec=2.0,
+    #         )
+    #         return False
 
         return True
 
