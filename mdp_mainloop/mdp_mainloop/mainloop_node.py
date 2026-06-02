@@ -276,10 +276,11 @@ class MainLoopNode(Node):
         yaw = self.get_yaw_from_pose(self.current_pose)
         ex, ey = dx * math.cos(yaw) + dy * math.sin(yaw), -dx * math.sin(yaw) + dy * math.cos(yaw)
         twist = Twist()
-        twist.linear.x, twist.linear.y = max(min(ex * 0.5, 0.2), -0.2), max(min(ey * 0.5, 0.2), -0.2)
+        twist.linear.x = max(min(ex * 0.2, 0.1), -0.1)
+        twist.linear.y = max(min(ey * 0.2, 0.1), -0.1)
         ty = target[2] if target[2] is not None else self.strafe_start_yaw
         ye = (ty - yaw + math.pi) % (2 * math.pi) - math.pi
-        twist.angular.z = ye * 1.0
+        twist.angular.z = ye * 0.5
         self.get_logger().info(f"Strafing: dist={dist:.2f}m, local_err=({ex:.2f}, {ey:.2f}), cmd=({twist.linear.x:.2f}, {twist.linear.y:.2f})", throttle_duration_sec=1.0)
         self.cmd_vel_pub.publish(twist)
 
