@@ -26,8 +26,8 @@ class CustomTeleopJoy(Node):
         self.declare_parameter('scale_angular_z', 2.0)
 
         # Arm params
-        self.declare_parameter('axis_dpad_x', 6)            # D-pad Left/Right
-        self.declare_parameter('axis_dpad_y', 7)            # D-pad Up/Down
+        # self.declare_parameter('axis_dpad_x', 6)            # D-pad Left/Right
+        # self.declare_parameter('axis_dpad_y', 7)            # D-pad Up/Down
 
         self.declare_parameter('btn_triangle', 2)           # Elbow +
         self.declare_parameter('btn_cross', 0)              # Elbow -
@@ -55,8 +55,8 @@ class CustomTeleopJoy(Node):
         self.scale_linear_y = self.get_parameter('scale_linear_y').value
         self.scale_angular_z = self.get_parameter('scale_angular_z').value
 
-        self.axis_dpad_x = self.get_parameter('axis_dpad_x').value
-        self.axis_dpad_y = self.get_parameter('axis_dpad_y').value
+        # self.axis_dpad_x = self.get_parameter('axis_dpad_x').value
+        # self.axis_dpad_y = self.get_parameter('axis_dpad_y').value
         self.btn_triangle = self.get_parameter('btn_triangle').value
         self.btn_cross = self.get_parameter('btn_cross').value
         self.btn_circle = self.get_parameter('btn_circle').value
@@ -128,18 +128,18 @@ class CustomTeleopJoy(Node):
             arm_command_triggered = False
 
             # -- Joint 0: Shoulder Pan (D-pad Left/Right) --
-            if msg.axes[self.axis_dpad_x] > 0.5:   # Left
+            if msg.axes[self.axis_r_x] > 0.2:   # Left
                 new_positions[0] += self.arm_step
                 arm_command_triggered = True
-            elif msg.axes[self.axis_dpad_x] < -0.5: # Right
+            elif msg.axes[self.axis_r_x] < -0.2: # Right
                 new_positions[0] -= self.arm_step
                 arm_command_triggered = True
 
             # -- Joint 1: Shoulder Lift (D-pad Up/Down) --
-            if msg.axes[self.axis_dpad_y] > 0.5:   # Up
+            if msg.axes[self.axis_r_y] > 0.5:   # Up
                 new_positions[1] -= self.arm_step
                 arm_command_triggered = True
-            elif msg.axes[self.axis_dpad_y] < -0.5: # Down
+            elif msg.axes[self.axis_r_y] < -0.5: # Down
                 new_positions[1] += self.arm_step
                 arm_command_triggered = True
 
