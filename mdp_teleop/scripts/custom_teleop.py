@@ -113,13 +113,13 @@ class CustomTeleopJoy(Node):
                 twist.linear.y = 0.0
                 twist.angular.z = msg.axes[self.axis_l_x] * self.scale_angular_z
 
-        else:
-            # Deadman switch off
-            twist.linear.x = 0.0
-            twist.linear.y = 0.0
-            twist.angular.z = 0.0                
+        # else:
+        #     # Deadman switch off
+        #     twist.linear.x = 0.0
+        #     twist.linear.y = 0.0
+        #     twist.angular.z = 0.0                
             
-        self.base_pub.publish(twist)
+            self.base_pub.publish(twist)
 
         # ARM CONTROL
         if msg.buttons[self.btn_enable] == 1 and self.arm_initialized:
