@@ -9,13 +9,13 @@ Make a workspace folder and clone the repo inside the /src folder:
 ```bash
 mkdir -p mdp_ws/src
 cd mdp_ws/src
-git clone https://gitlab.tudelft.nl/cor/ro47007/2026/group_25/mdp2026.git
+git clone https://gitlab.tudelft.nl/cor/ro47007/2026/group_25/mdp-packages.git
 ```
 
 or (if using ssh key)
 
 ```bash
-git clone git@gitlab.tudelft.nl:cor/ro47007/2026/group_25/mdp2026.git
+git clone git@gitlab.tudelft.nl:cor/ro47007/2026/group_25/mdp-packages.git
 ```
 
 From the /src folder, clone the source repos:
