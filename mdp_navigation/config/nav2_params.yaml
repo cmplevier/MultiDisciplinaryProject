@@ -1,7 +1,7 @@
 planner_server:
   ros__parameters:
     expected_planner_frequency: 2.0
-    use_sim_time: True
+    use_sim_time: false
     planner_plugins: ["GridBased"]
     GridBased:
       plugin: "nav2_navfn_planner/NavfnPlanner"
@@ -11,12 +11,12 @@ planner_server:
 
 planner_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
 
 controller_server:
   ros__parameters:
-    use_sim_time: True
-    controller_frequency: 5.0
+    use_sim_time: false
+    controller_frequency: 10.0
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
@@ -34,26 +34,27 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.25
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.12
+      yaw_goal_tolerance: 0.08
     # DWB parameters
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
-      min_vel_x: 0.0
-      min_vel_y: -0.1
-      max_vel_x: 0.8
-      max_vel_y: 0.1
-      max_vel_theta: 2.0
+      min_vel_x: -0.15
+      min_vel_y: -0.07
+      max_vel_x: 0.15
+      max_vel_y: 0.07
+      min_vel_theta: -0.3
+      max_vel_theta: 0.3
       min_speed_xy: 0.0
-      max_speed_xy: 0.8
-      min_speed_theta: 0.0
-      acc_lim_x: 2.5
-      acc_lim_y: 2.5
-      acc_lim_theta: 3.2
-      decel_lim_x: -2.5
-      decel_lim_y: -2.5
-      decel_lim_theta: -3.2
+      max_speed_xy: 0.15
+      min_speed_theta: 0.001
+      acc_lim_x: 0.4
+      acc_lim_y: 0.2
+      acc_lim_theta: 0.6
+      decel_lim_x: -0.4
+      decel_lim_y: -0.2
+      decel_lim_theta: -0.6
       vx_samples: 15
       vy_samples: 5
       vtheta_samples: 15
@@ -61,12 +62,15 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 2.0
-      xy_goal_tolerance: 0.25
-      trans_stopped_velocity: 0.25
+      xy_goal_tolerance: 0.10
+      trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: True
       stateful: True
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 5.0
+      # ObstacleFootprint rejects trajectories where the robot footprint collides
+      # with the local costmap. BaseObstacle then biases paths farther from costs.
+      critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      ObstacleFootprint.scale: 50.0
+      BaseObstacle.scale: 20.0
       PathAlign.scale: 80.0
       PathAlign.forward_point_distance: 0.2
       GoalAlign.scale: 60.0
@@ -74,22 +78,24 @@ controller_server:
       PathDist.scale: 20.0
       GoalDist.scale: 15.0
       RotateToGoal.scale: 32.0
-      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.slowing_factor: 1.0
       RotateToGoal.lookahead_time: -1.0
       Oscillation.scale: 0.0
 
 controller_server_rclcpp_node:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
 
 local_costmap:
   local_costmap:
     ros__parameters:
-      update_frequency: 2.0
+      # Keep the local costmap responsive enough for moving Gazebo obstacles.
+      update_frequency: 5.0
       publish_frequency: 2.0
-      global_frame: odom
+      # A rolling local costmap is normally tracked in odom to avoid map-frame jumps.
+      global_frame: map
       robot_base_frame: base_link
-      use_sim_time: True
+      use_sim_time: false
       rolling_window: True
       width: 3
       height: 3
@@ -98,8 +104,9 @@ local_costmap:
       plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 10.0
-        inflation_radius: 0.3
+        # Larger inflation gives DWB more room to steer around newly seen objects.
+        cost_scaling_factor: 8.0
+        inflation_radius: 0.20
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -122,15 +129,20 @@ local_costmap:
 global_costmap:
   global_costmap:
     ros__parameters:
-      update_frequency: 0.5
-      publish_frequency: 0.5
+      # The global costmap can be slower than local, but should still update
+      # often enough that the planner can replan around visible obstacles.
+      update_frequency: 1.0
+      publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      use_sim_time: True
+      use_sim_time: false
       footprint: "[ [0.12, 0.09], [0.12, -0.09], [-0.12, -0.09], [-0.12, 0.09] ]"
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -145,23 +157,21 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.14
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 10.0
-        inflation_radius: 0.3
+        # Match the local safety buffer so global plans keep some clearance too.
+        cost_scaling_factor: 8.0
+        inflation_radius: 0.20
       always_send_full_costmap: True
 
 map_server:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     # yaml_filename: "test_map.yaml" # Set by launch file
 
 map_saver:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     save_map_timeout: 5.0
     free_thresh_default: 0.25
     occupied_thresh_default: 0.65
@@ -169,10 +179,10 @@ map_saver:
 
 bt_navigator:
   ros__parameters:
-    use_sim_time: True
+    use_sim_time: false
     global_frame: map
     robot_base_frame: base_link
-    odom_topic: odom
+    odom_topic: /mirte_base_controller/odom
     bt_loop_duration: 10
     default_server_timeout: 20
     # default_nav_to_pose_bt_xml: "navigate_to_pose_w_replanning_and_recovery.xml"
@@ -203,8 +213,8 @@ behavior_server:
     global_frame: odom
     robot_base_frame: base_link
     transform_tolerance: 1.0
-    use_sim_time: true
-    simulate_ahead_time: 2.0
+    use_sim_time: false
+    simulate_ahead_time: 3.0
     max_rotational_vel: 1.0
-    min_rotational_vel: 0.4
+    min_rotational_vel: 0.2
     rotational_acc_lim: 3.2

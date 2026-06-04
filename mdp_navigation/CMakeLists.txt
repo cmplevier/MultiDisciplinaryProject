@@ -21,4 +21,8 @@ install(DIRECTORY
   rviz
   DESTINATION share/${PROJECT_NAME})
 
+install(PROGRAMS
+  scripts/wait_for_lifecycle_active.py
+  DESTINATION share/${PROJECT_NAME}/scripts)
+
 ament_package()

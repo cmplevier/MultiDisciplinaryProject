@@ -1,10 +1,11 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node, PushRosNamespace
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.descriptions import ParameterFile
+from nav2_common.launch import RewrittenYaml
 
 def generate_launch_description():
 
@@ -12,18 +13,31 @@ def generate_launch_description():
     use_namespace = LaunchConfiguration("use_namespace")
     use_sim_time = LaunchConfiguration("use_sim_time")
     params_file = LaunchConfiguration("params_file")
+    odom_topic = LaunchConfiguration("odom_topic")
+    cmd_vel_topic = LaunchConfiguration("cmd_vel_topic")
     autostart = LaunchConfiguration("autostart")
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
     map_yaml_file = LaunchConfiguration("map")
     use_rviz = LaunchConfiguration("use_rviz")
+    rviz_config_file = LaunchConfiguration("rviz_config_file")
 
-    rviz_config_file = PathJoinSubstitution(
+    default_rviz_config_file = PathJoinSubstitution(
         [FindPackageShare("mdp_navigation"), "rviz", "navigation.rviz"]
     )
 
+    param_substitutions = {
+        "use_sim_time": use_sim_time,
+        "odom_topic": odom_topic,
+    }
+
     configured_params = ParameterFile(
-        params_file,
+        RewrittenYaml(
+            source_file=params_file,
+            root_key=namespace,
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
         allow_substs=True,
     )
 
@@ -39,7 +53,7 @@ def generate_launch_description():
         ("/tf_static", "tf_static"),
     ]
 
-    cmd_vel_remap = [("cmd_vel", "/cmd_vel_nav")]
+    cmd_vel_remap = [("cmd_vel", cmd_vel_topic)]
 
     nav_actions = [
         PushRosNamespace(
@@ -143,8 +157,32 @@ def generate_launch_description():
     ld.add_action(
         DeclareLaunchArgument(
             "use_sim_time",
-            default_value="True",
+            default_value="False",
             description="Use Gazebo simulation time.",
+        )
+    )
+
+    ld.add_action(
+        DeclareLaunchArgument(
+            "odom_topic",
+            default_value=PythonExpression([
+                "'/odom' if '",
+                use_sim_time,
+                "'.lower() in ['true', '1', 'yes'] else '/mirte_base_controller/odom'",
+            ]),
+            description="Odometry topic for Nav2. Defaults to /odom in simulation and /mirte_base_controller/odom on the real robot.",
+        )
+    )
+
+    ld.add_action(
+        DeclareLaunchArgument(
+            "cmd_vel_topic",
+            default_value=PythonExpression([
+                "'/mirte_base_controller/cmd_vel_unstamped' if '",
+                use_sim_time,
+                "'.lower() in ['true', '1', 'yes'] else '/mirte_base_controller/cmd_vel'",
+            ]),
+            description="Topic where Nav2 controller commands are published. Defaults to /mirte_base_controller/cmd_vel_unstamped in simulation and /mirte_base_controller/cmd_vel on the real robot.",
         )
     )
 
@@ -197,6 +235,14 @@ def generate_launch_description():
             "use_rviz",
             default_value="True",
             description="Whether to start RViz",
+        )
+    )
+
+    ld.add_action(
+        DeclareLaunchArgument(
+            "rviz_config_file",
+            default_value=default_rviz_config_file,
+            description="RViz config file to use for navigation visualizations",
         )
     )
 

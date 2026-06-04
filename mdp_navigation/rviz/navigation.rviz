@@ -158,6 +158,15 @@ Visualization Manager:
     - Class: rviz_default_plugins/TF
       Enabled: false
       Name: TF
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Waypoints
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /waypoint_markers
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
