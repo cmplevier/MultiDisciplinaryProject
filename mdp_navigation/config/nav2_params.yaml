@@ -93,7 +93,7 @@ local_costmap:
       update_frequency: 5.0
       publish_frequency: 2.0
       # A rolling local costmap is normally tracked in odom to avoid map-frame jumps.
-      global_frame: odom
+      global_frame: map
       robot_base_frame: base_link
       use_sim_time: false
       rolling_window: True
@@ -106,7 +106,7 @@ local_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         # Larger inflation gives DWB more room to steer around newly seen objects.
         cost_scaling_factor: 8.0
-        inflation_radius: 0.35
+        inflation_radius: 0.20
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
@@ -161,7 +161,7 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         # Match the local safety buffer so global plans keep some clearance too.
         cost_scaling_factor: 8.0
-        inflation_radius: 0.35
+        inflation_radius: 0.20
       always_send_full_costmap: True
 
 map_server:

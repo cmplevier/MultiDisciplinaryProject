@@ -4,6 +4,7 @@ import json
 import math
 import os
 import time
+from datetime import datetime
 
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
@@ -57,7 +58,7 @@ class MainLoopNode(Node):
         self.declare_parameter('marker_topic', '/mission_markers')
         self.declare_parameter('nav_action_name', 'navigate_to_pose')
 
-        self.declare_parameter('strafe_speed', 0.2)
+        self.declare_parameter('strafe_speed', 0.15)
         self.declare_parameter('strafe_tolerance', 0.15)
         self.declare_parameter('yaw_gain', 0.5)
         self.declare_parameter('max_yaw_rate', 0.5)
