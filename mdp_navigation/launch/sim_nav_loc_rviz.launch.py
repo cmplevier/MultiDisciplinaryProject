@@ -66,7 +66,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'cmd_vel_topic',
-            default_value='/mirte_base_controller/cmd_vel_unstamped',
+            default_value='cmd_vel_nav',
             description='Velocity topic used by Nav2 in simulation'
         ),
 

@@ -8,6 +8,14 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     
     # Launch Arguments
+    use_sim_time = LaunchConfiguration('use_sim_time')
+
+    use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation clock if true'
+    )
+
     cmd_vel_remap = DeclareLaunchArgument(
         'cmd_vel_remap', 
         default_value='/mirte_base_controller/cmd_vel',
@@ -30,7 +38,7 @@ def generate_launch_description():
         package="joy",
         executable="joy_node",
         name="joy_node",
-        parameters=[config_file]
+        parameters=[config_file, {'use_sim_time': use_sim_time}]
     )
 
     # Node that reads the joy_node messages and translates them into geometry_msgs/msg/Twist
@@ -39,10 +47,11 @@ def generate_launch_description():
         executable="custom_teleop.py", # Direct script file target
         name="teleop_joy_node",
         remappings=[("/cmd_vel", LaunchConfiguration('cmd_vel_remap'))],
-        parameters=[config_file]
+        parameters=[config_file, {'use_sim_time': use_sim_time}]
     )
 
     return LaunchDescription([
+        use_sim_time_arg,
         cmd_vel_remap,
         joy_config_arg,
         joy_node,
