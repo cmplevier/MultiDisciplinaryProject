@@ -12,6 +12,7 @@ def generate_launch_description():
     plan_path = LaunchConfiguration('plan_path')
     seed_plan_path = LaunchConfiguration('seed_plan_path')
     clear_plan = LaunchConfiguration('clear_plan')
+    capture_mode = LaunchConfiguration('capture_mode')
     launch_rviz = LaunchConfiguration('launch_rviz')
     rviz_config_file = LaunchConfiguration('rviz_config_file')
 
@@ -51,6 +52,11 @@ def generate_launch_description():
             'clear_plan',
             default_value='false',
             description='Start from an empty generated plan',
+        ),
+        DeclareLaunchArgument(
+            'capture_mode',
+            default_value='tray',
+            description='Use tray to capture A/B then C/D, or row for old row pairs',
         ),
         DeclareLaunchArgument(
             'launch_rviz',
@@ -94,6 +100,7 @@ def generate_launch_description():
                 {'plan_path': plan_path},
                 {'seed_plan_path': seed_plan_path},
                 {'clear_on_start': clear_plan},
+                {'capture_mode': capture_mode},
             ],
         ),
         Node(

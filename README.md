@@ -184,9 +184,9 @@ cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped|/mirte_base_controller/c
 
 ## Row Plan Authoring And Mission Execution
 
-The goal of this pipeline is to scan greenhouse rows from a discrete
-plan. For each row, the robot first navigates to an `approach_pose` using
-Nav2, then strafes directly to a `scan_end_pose` while scanning.
+The goal of this pipeline is to scan trays from a discrete plan. Each
+tray has four waypoints: the robot navigates to `A`, strafes from `A` to
+`B`, navigates from `B` to `C`, then strafes from `C` to `D`.
 
 The system is intentionally modular so each part can be tested
 separately before the robot moves:
@@ -201,25 +201,19 @@ row_plan_builder_node
 row_plan_validator_node
   Used after authoring.
   Reads the generated JSON file.
-  Checks that rows, IDs, approach poses, and scan-end poses are valid.
+  Checks that trays, IDs, and A/B/C/D poses are valid.
 
 mdp_navigation stack
   Starts simulation, localization, map server, Nav2, and RViz.
   Provides /amcl_pose and the /navigate_to_pose action server.
   Publishes Nav2 velocity commands for the approach motion.
 
-high_level_planner_node
-  Used during execution.
-  Reads ~/mdp_ws/generated_row_plan.json.
-  Chooses the next row, normally in JSON order.
-  Sends one row task at a time to mainloop_node.
-
 mainloop_node
   Used during execution.
-  Receives row tasks from the planner.
-  Sends approach_pose to Nav2.
+  Reads ~/mdp_ws/generated_row_plan.json.
+  Sends each tray segment start pose to Nav2.
   After Nav2 succeeds, publishes direct strafe velocity commands until
-  scan_end_pose is reached.
+  the segment end pose is reached.
 ```
 
 The data flow is:
@@ -229,7 +223,6 @@ RViz arrows
   -> row_plan_builder_node
   -> generated_row_plan.json
   -> row_plan_validator_node
-  -> high_level_planner_node
   -> mainloop_node
   -> Nav2 approach + direct strafe
 ```
@@ -242,7 +235,7 @@ execution can be debugged separately:
    Create and inspect generated_row_plan.json. The robot does not move.
 
 2. Execute the finished plan.
-   Start navigation, start the planner/executor, then enable autonomy.
+   Start navigation, start the executor, then enable autonomy.
 ```
 
 ### 0. Build
@@ -278,7 +271,8 @@ The generated file is written here:
 ~/mdp_ws/generated_row_plan.json
 ```
 
-In RViz, use the two row-plan pose tools:
+The builder defaults to tray capture mode. In RViz, use the two
+row-plan pose tools:
 
 ```text
 Set Row Approach Pose -> /row_plan/approach_pose
@@ -288,29 +282,32 @@ Set Row Goal Pose     -> /row_plan/scan_end_pose
 The toolbar may show both as `2D Goal Pose`; check the Tool Properties
 panel if the labels are ambiguous (the left one is the approach one, while the right one is the goal strafing pose).
 
-For each row:
+For each tray:
 
 ```text
-1. Publish a row ID.
-2. Set the approach arrow where Nav2 should drive first.
-3. Set the goal / scan-end arrow where strafing should finish.
+1. Publish a tray ID.
+2. Set the approach/start arrow for A.
+3. Set the goal/end arrow for B.
+4. Set the approach/start arrow for C.
+5. Set the goal/end arrow for D.
 ```
 
 Example:
 
 ```bash
-ros2 topic pub --once /row_plan/row_id std_msgs/String "{data: row_1}"
+ros2 topic pub --once /row_plan/tray_id std_msgs/String "{data: tray_1}"
 ```
 
 Then click-drag `Set Row Approach Pose`, then click-drag
-`Set Row Goal Pose`. Repeat with `row_2`, `row_3`, etc.
+`Set Row Goal Pose` for `A -> B`. Repeat the two clicks for `C -> D`.
+Then publish `tray_2`, `tray_3`, etc.
 
 The builder shows:
 
 ```text
-blue arrow  = APPROACH
-green arrow = GOAL / SCAN END
-line        = connection between them
+blue arrow  = segment start
+green arrow = segment end
+line        = strafe segment
 ```
 
 To check the file before running the robot:
@@ -353,8 +350,8 @@ ros2 launch mdp_navigation sim_nav_loc_rviz.launch.py \
 In RViz, set the robot's initial pose with `2D Pose Estimate` if AMCL
 does not already know where the robot is.
 
-Terminal 2: start only the mission planner and executor. The planner
-reads `generated_row_plan.json`; the executor sends Nav2 goals and later
+Terminal 2: start the mission executor. It reads
+`generated_row_plan.json`, sends Nav2 goals for each segment start, and
 publishes strafe velocity commands to the same velocity topic.
 
 ```bash
@@ -366,18 +363,19 @@ ros2 launch mdp_mainloop mainloop.launch.py \
   use_sim_time:=true \
   clear_history:=true \
   cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped \
-  generated_row_plan_path:=~/mdp_ws/generated_row_plan.json
+  plan_path:=~/mdp_ws/generated_row_plan.json
 ```
 
 This launch starts:
 
 ```text
-mdp_high_level_planner_node  # reads generated_row_plan.json
-mdp_mainloop_node            # executes NAV + STRAFE tasks
+mdp_mainloop_node  # executes tray NAV + STRAFE tasks
 ```
 
-If no row scores are published, the planner follows the order in the
-JSON file: first row, second row, third row, and so on.
+The executor follows the tray order in the JSON file. If a strafe is
+blocked by the local costmap for too long, that tray is temporarily
+skipped; after the robot completes another tray segment, skipped trays
+become eligible again.
 
 Terminal 3: check that the executor has a robot pose and is waiting for
 autonomy.
@@ -394,7 +392,7 @@ If `/amcl_pose` does not print, use `2D Pose Estimate` in RViz and check
 again.
 
 Enable autonomy by publishing the enable message for a few seconds. This
-makes sure both the planner and executor receive it.
+makes sure the executor receives it.
 
 ```bash
 ros2 topic pub -r 2 /autonomous_enabled std_msgs/Bool "{data: true}"
@@ -413,9 +411,6 @@ Useful checks while running:
 
 ```bash
 ros2 topic echo /mission_dashboard
-ros2 topic echo /planner/status
-ros2 topic echo /planner/discrete_state
-ros2 topic echo /planner/next_task
 ros2 topic echo /mainloop/status
 ros2 topic echo /mainloop/task_result
 ros2 topic echo /mirte_base_controller/cmd_vel_unstamped
@@ -440,31 +435,16 @@ generated_row_plan.json is missing or invalid
 
 ### Optional Dynamic Updates
 
-To add or replace one row dynamically:
+To add or replace one tray dynamically:
 
 ```bash
-ros2 topic pub --once /row_plan/set_row std_msgs/String \
-  "{data: '{\"id\": \"row_c\", \"approach_pose\": [1.0, 0.0, 1.57], \"scan_end_pose\": [1.0, 1.2, 1.57]}'}"
+ros2 topic pub --once /row_plan/set_tray std_msgs/String \
+  "{data: '{\"id\": \"tray_3\", \"waypoints\": {\"A\": [1.0, 0.0, 1.57], \"B\": [1.0, 1.2, 1.57], \"C\": [1.4, 1.2, -1.57], \"D\": [1.4, 0.0, -1.57]}}'}"
 ```
 
 The builder writes the generated JSON file and publishes the full active
-plan on `/planner/row_plan`. The planner reloads that topic while
-running.
-
-Planner input can be published as JSON on `/planner/row_scores`:
-
-```bash
-ros2 topic pub --once /planner/row_scores std_msgs/String \
-  "{data: '{\"row_scores\": {\"row_a\": 0.1, \"row_b\": 0.9}}'}"
-```
-
-The planner will choose the highest-scored available row. To force a
-specific row:
-
-```bash
-ros2 topic pub --once /planner/row_scores std_msgs/String \
-  "{data: '{\"selected_row\": \"row_b\", \"force_rescan\": true}'}"
-```
+plan on `/planner/row_plan` for visualization/debugging. For execution,
+restart `mainloop.launch.py` or point it at the updated JSON file.
 
 The executor reports status on `/mainloop/status` and task results on
 `/mainloop/task_result`. Autonomy is still gated by `/autonomous_enabled`.

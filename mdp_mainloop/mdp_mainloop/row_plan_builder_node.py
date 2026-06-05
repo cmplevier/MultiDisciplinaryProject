@@ -15,6 +15,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 DEFAULT_PLAN = {
     # The builder keeps the same shape on disk and on /planner/row_plan.
+    'trays': [],
     'rows': [],
     'return_home_pose': None,
 }
@@ -38,7 +39,9 @@ class RowPlanBuilderNode(Node):
 
         # Topic API for editing the plan.
         self.declare_parameter('set_row_topic', '/row_plan/set_row')
+        self.declare_parameter('set_tray_topic', '/row_plan/set_tray')
         self.declare_parameter('clear_plan_topic', '/row_plan/clear')
+        self.declare_parameter('capture_mode', 'tray')
         self.declare_parameter(
             'approach_pose_topic',
             '/row_plan/approach_pose',
@@ -48,6 +51,7 @@ class RowPlanBuilderNode(Node):
             '/row_plan/scan_end_pose',
         )
         self.declare_parameter('row_id_topic', '/row_plan/row_id')
+        self.declare_parameter('tray_id_topic', '/row_plan/tray_id')
         self.declare_parameter('plan_topic', '/planner/row_plan')
         self.declare_parameter('status_topic', '/row_plan/status')
         self.declare_parameter('marker_topic', '/row_plan/markers')
@@ -61,19 +65,24 @@ class RowPlanBuilderNode(Node):
         )
         self.clear_on_start = self.get_parameter('clear_on_start').value
         set_row_topic = self.get_parameter('set_row_topic').value
+        set_tray_topic = self.get_parameter('set_tray_topic').value
         clear_plan_topic = self.get_parameter('clear_plan_topic').value
+        self.capture_mode = str(
+            self.get_parameter('capture_mode').value
+        ).lower()
         approach_pose_topic = self.get_parameter(
             'approach_pose_topic').value
         scan_end_pose_topic = self.get_parameter(
             'scan_end_pose_topic').value
         row_id_topic = self.get_parameter('row_id_topic').value
+        tray_id_topic = self.get_parameter('tray_id_topic').value
         plan_topic = self.get_parameter('plan_topic').value
         status_topic = self.get_parameter('status_topic').value
         marker_topic = self.get_parameter('marker_topic').value
         self.publish_period = self.get_parameter('publish_period').value
 
         if self.clear_on_start:
-            self.plan = DEFAULT_PLAN.copy()
+            self.plan = self.empty_plan()
             self.get_logger().info('Starting with an empty generated plan')
         else:
             self.plan = self.load_initial_plan()
@@ -83,6 +92,7 @@ class RowPlanBuilderNode(Node):
         # first store the approach pose, then commit the row on scan-end pose.
         self.pending_approach_pose = None
         self.pending_row_id = None
+        self.pending_tray_id = None
 
         # Latch the full plan so a planner started later receives it
         # immediately without waiting for the next periodic publish.
@@ -108,6 +118,12 @@ class RowPlanBuilderNode(Node):
             String,
             set_row_topic,
             self.set_row_callback,
+            10,
+        )
+        self.set_tray_sub = self.create_subscription(
+            String,
+            set_tray_topic,
+            self.set_tray_callback,
             10,
         )
         self.clear_sub = self.create_subscription(
@@ -136,6 +152,12 @@ class RowPlanBuilderNode(Node):
             self.row_id_callback,
             10,
         )
+        self.tray_id_sub = self.create_subscription(
+            String,
+            tray_id_topic,
+            self.tray_id_callback,
+            10,
+        )
 
         # Periodic publication keeps status and markers visible in RViz.
         self.timer = self.create_timer(0.5, self.timer_callback)
@@ -153,7 +175,16 @@ class RowPlanBuilderNode(Node):
             if plan is not None:
                 return plan
 
-        return DEFAULT_PLAN.copy()
+        return self.empty_plan()
+
+    @staticmethod
+    def empty_plan():
+        """Return a fresh empty plan dictionary."""
+        return {
+            'trays': [],
+            'rows': [],
+            'return_home_pose': None,
+        }
 
     def load_plan_file(self, path):
         """Load and validate a row-plan JSON file."""
@@ -176,7 +207,7 @@ class RowPlanBuilderNode(Node):
         return plan
 
     def set_row_callback(self, msg):
-        """Add, replace, delete, or bulk-load rows from JSON."""
+        """Add, replace, delete, or bulk-load rows/trays from JSON."""
         try:
             command = json.loads(msg.data)
         except json.JSONDecodeError as exc:
@@ -189,11 +220,30 @@ class RowPlanBuilderNode(Node):
             self.get_logger().warn('Row command must be a JSON object/list')
             return
 
-        # The JSON command can combine several operations in one message:
-        # clear, update return home, delete one row, replace all rows, or
-        # upsert a single row.
+        self.apply_plan_command(command)
+
+    def set_tray_callback(self, msg):
+        """Add, replace, delete, or bulk-load trays from JSON."""
+        try:
+            command = json.loads(msg.data)
+        except json.JSONDecodeError as exc:
+            self.get_logger().warn(f'Ignoring invalid tray command: {exc}')
+            return
+
+        if isinstance(command, list):
+            command = {'trays': command}
+        elif isinstance(command, dict) and 'waypoints' in command:
+            command = {'tray': command}
+        if not isinstance(command, dict):
+            self.get_logger().warn('Tray command must be a JSON object/list')
+            return
+
+        self.apply_plan_command(command)
+
+    def apply_plan_command(self, command):
+        """Apply one JSON edit command to rows, trays, and return-home pose."""
         if command.get('clear'):
-            self.plan = DEFAULT_PLAN.copy()
+            self.plan = self.empty_plan()
 
         if 'return_home_pose' in command:
             pose = self.parse_pose(command.get('return_home_pose'))
@@ -206,11 +256,25 @@ class RowPlanBuilderNode(Node):
         if deleted is not None:
             self.delete_row(str(deleted))
 
+        deleted_tray = command.get('delete_tray')
+        if deleted_tray is not None:
+            self.delete_tray(str(deleted_tray))
+
         rows = command.get('rows')
         if rows is not None:
             self.replace_rows(rows)
-        elif 'approach_pose' in command and 'scan_end_pose' in command:
+        elif 'approach_pose' in command and (
+            'scan_end_pose' in command or 'goal_pose' in command
+        ):
             self.upsert_row(command)
+
+        trays = command.get('trays')
+        if trays is not None:
+            self.replace_trays(trays)
+        elif command.get('tray') is not None:
+            self.upsert_tray(command['tray'])
+        elif 'waypoints' in command:
+            self.upsert_tray(command)
 
         self.save_plan()
         self.publish_plan(force=True)
@@ -222,34 +286,42 @@ class RowPlanBuilderNode(Node):
             self.pending_row_id = row_id
             self.get_logger().info(f'Next captured row ID: {row_id}')
 
+    def tray_id_callback(self, msg):
+        """Set the tray ID used by the next two PoseStamped capture pairs."""
+        tray_id = msg.data.strip()
+        if tray_id:
+            self.pending_tray_id = tray_id
+            self.get_logger().info(f'Next captured tray ID: {tray_id}')
+
     def approach_pose_callback(self, msg):
         """Store the next approach pose for PoseStamped row capture."""
         # This only stores half of a row. The row is not written until the
         # matching scan-end pose arrives.
         self.pending_approach_pose = self.pose_stamped_to_list(msg)
         self.get_logger().info(
-            f'Received approach pose for {self.next_capture_row_id()}'
+            f'Received start pose for {self.next_pending_capture_label()}'
         )
 
     def scan_end_pose_callback(self, msg):
-        """Commit a row after receiving its scan-end PoseStamped."""
+        """Commit a row/tray segment after receiving its scan-end pose."""
         if self.pending_approach_pose is None:
             self.get_logger().warn(
                 'Received scan_end_pose before approach_pose; ignoring'
             )
             return
 
-        # The second arrow completes the row. After writing it, clear the
-        # pending state so the next pair of arrows creates a new row.
-        row_id = self.next_capture_row_id()
-        row = {
-            'id': row_id,
+        segment = {
             'approach_pose': self.pending_approach_pose,
             'scan_end_pose': self.pose_stamped_to_list(msg),
         }
-        self.upsert_row(row)
+        if self.capture_mode == 'row':
+            segment['id'] = self.next_capture_row_id()
+            self.upsert_row(segment)
+            self.pending_row_id = None
+        else:
+            self.capture_tray_segment(segment)
+
         self.pending_approach_pose = None
-        self.pending_row_id = None
         self.save_plan()
         self.publish_plan(force=True)
 
@@ -259,14 +331,80 @@ class RowPlanBuilderNode(Node):
         # insertion order. This keeps RViz-only authoring usable.
         if self.pending_row_id:
             return self.pending_row_id
-        return f"row_{len(self.plan['rows']) + 1}"
+        return f"row_{len(self.plan.get('rows', [])) + 1}"
+
+    def next_capture_tray_id(self):
+        """Return the tray ID for the next PoseStamped capture."""
+        if self.pending_tray_id:
+            return self.pending_tray_id
+
+        for tray in self.plan.get('trays', []):
+            if self.next_missing_tray_segment(tray) is not None:
+                return tray['id']
+
+        return f"tray_{len(self.plan.get('trays', [])) + 1}"
+
+    def capture_tray_segment(self, segment):
+        """Write one captured pose pair into A/B or C/D of a tray."""
+        tray_id = self.next_capture_tray_id()
+        tray = self.get_or_create_tray(tray_id)
+        waypoint_pair = self.next_missing_tray_segment(tray)
+        if waypoint_pair is None:
+            self.get_logger().warn(
+                f'Tray {tray_id} already has A/B/C/D; ignoring capture'
+            )
+            return
+
+        start_key, end_key = waypoint_pair
+        tray.setdefault('waypoints', {})
+        tray['waypoints'][start_key] = segment['approach_pose']
+        tray['waypoints'][end_key] = segment['scan_end_pose']
+        self.get_logger().info(
+            f'Captured tray {tray_id} segment {start_key}->{end_key}'
+        )
+
+        if self.next_missing_tray_segment(tray) is None:
+            self.get_logger().info(f'Tray {tray_id} now has A/B/C/D')
+            if self.pending_tray_id == tray_id:
+                self.pending_tray_id = None
+
+    def get_or_create_tray(self, tray_id):
+        """Return an existing tray or append a new one."""
+        tray = self.find_tray(tray_id)
+        if tray is not None:
+            return tray
+
+        tray = {'id': tray_id, 'waypoints': {}}
+        self.plan.setdefault('trays', []).append(tray)
+        self.get_logger().info(f'Added tray {tray_id}')
+        return tray
+
+    def find_tray(self, tray_id):
+        """Return an existing tray by ID, or None."""
+        for tray in self.plan.get('trays', []):
+            if tray['id'] == tray_id:
+                return tray
+        return None
+
+    @staticmethod
+    def next_missing_tray_segment(tray):
+        """Return the next missing waypoint pair for a tray."""
+        waypoints = tray.get('waypoints', {})
+        if not all(name in waypoints for name in ['A', 'B']):
+            return ('A', 'B')
+        if not all(name in waypoints for name in ['C', 'D']):
+            return ('C', 'D')
+        return None
 
     def clear_plan_callback(self, msg):
         """Clear all generated rows when requested."""
         if not msg.data:
             return
 
-        self.plan = DEFAULT_PLAN.copy()
+        self.plan = self.empty_plan()
+        self.pending_approach_pose = None
+        self.pending_row_id = None
+        self.pending_tray_id = None
         self.save_plan()
         self.publish_plan(force=True)
         self.get_logger().info('Generated row plan cleared')
@@ -288,6 +426,23 @@ class RowPlanBuilderNode(Node):
             f'Replaced generated plan with {len(validated_rows)} rows'
         )
 
+    def replace_trays(self, trays):
+        """Replace all trays with a validated tray list."""
+        if not isinstance(trays, list):
+            self.get_logger().warn('trays must be a list')
+            return
+
+        validated_trays = []
+        for index, raw_tray in enumerate(trays):
+            tray = self.parse_tray(raw_tray, index)
+            if tray is not None:
+                validated_trays.append(tray)
+
+        self.plan['trays'] = validated_trays
+        self.get_logger().info(
+            f'Replaced generated plan with {len(validated_trays)} trays'
+        )
+
     def upsert_row(self, raw_row):
         """Add or replace one row definition."""
         row = self.parse_row(raw_row, len(self.plan['rows']))
@@ -305,6 +460,21 @@ class RowPlanBuilderNode(Node):
         self.plan['rows'].append(row)
         self.get_logger().info(f"Added row {row['id']}")
 
+    def upsert_tray(self, raw_tray):
+        """Add or replace one tray definition."""
+        tray = self.parse_tray(raw_tray, len(self.plan.get('trays', [])))
+        if tray is None:
+            return
+
+        for index, existing_tray in enumerate(self.plan.get('trays', [])):
+            if existing_tray['id'] == tray['id']:
+                self.plan['trays'][index] = tray
+                self.get_logger().info(f"Updated tray {tray['id']}")
+                return
+
+        self.plan.setdefault('trays', []).append(tray)
+        self.get_logger().info(f"Added tray {tray['id']}")
+
     def delete_row(self, row_id):
         """Delete one row by ID."""
         original_count = len(self.plan['rows'])
@@ -314,6 +484,16 @@ class RowPlanBuilderNode(Node):
         ]
         if len(self.plan['rows']) != original_count:
             self.get_logger().info(f'Deleted row {row_id}')
+
+    def delete_tray(self, tray_id):
+        """Delete one tray by ID."""
+        original_count = len(self.plan.get('trays', []))
+        self.plan['trays'] = [
+            tray for tray in self.plan.get('trays', [])
+            if tray['id'] != tray_id
+        ]
+        if len(self.plan['trays']) != original_count:
+            self.get_logger().info(f'Deleted tray {tray_id}')
 
     def parse_plan(self, raw_plan):
         """Validate a whole plan object."""
@@ -328,11 +508,82 @@ class RowPlanBuilderNode(Node):
             if row is not None:
                 rows.append(row)
 
+        trays = []
+        for index, raw_tray in enumerate(raw_plan.get('trays', [])):
+            tray = self.parse_tray(raw_tray, index)
+            if tray is not None:
+                trays.append(tray)
+
         return_home_pose = self.parse_pose(raw_plan.get('return_home_pose'))
         return {
+            'trays': trays,
             'rows': rows,
             'return_home_pose': return_home_pose,
         }
+
+    def parse_tray(self, raw_tray, index):
+        """Validate one tray definition with A/B/C/D waypoints."""
+        if not isinstance(raw_tray, dict):
+            self.get_logger().warn(f'Ignoring tray {index}; not an object')
+            return None
+
+        tray_id = raw_tray.get('id') or raw_tray.get('tray_id')
+        if tray_id is None:
+            tray_id = f'tray_{index + 1}'
+
+        waypoints = self.parse_tray_waypoints(raw_tray)
+        if waypoints is None:
+            self.get_logger().warn(
+                f'Ignoring tray {tray_id}; invalid waypoints'
+            )
+            return None
+
+        return {
+            'id': str(tray_id),
+            'waypoints': waypoints,
+        }
+
+    def parse_tray_waypoints(self, raw_tray):
+        """Return a waypoint dictionary from waypoints or nested rows."""
+        raw_waypoints = (
+            raw_tray.get('waypoints')
+            or raw_tray.get('poses')
+            or raw_tray.get('points')
+        )
+
+        waypoints = {}
+        if isinstance(raw_waypoints, dict):
+            for name, raw_pose in raw_waypoints.items():
+                pose = self.parse_pose(raw_pose)
+                if pose is None:
+                    return None
+                waypoints[str(name).upper()] = pose
+        elif isinstance(raw_waypoints, list):
+            if len(raw_waypoints) > 4:
+                raw_waypoints = raw_waypoints[:4]
+            for name, raw_pose in zip(['A', 'B', 'C', 'D'], raw_waypoints):
+                pose = self.parse_pose(raw_pose)
+                if pose is None:
+                    return None
+                waypoints[name] = pose
+        elif isinstance(raw_tray.get('rows'), list):
+            rows = [
+                self.parse_row(row, index)
+                for index, row in enumerate(raw_tray['rows'])
+            ]
+            rows = [row for row in rows if row is not None]
+            if rows:
+                waypoints['A'] = rows[0]['approach_pose']
+                waypoints['B'] = rows[0]['scan_end_pose']
+            if len(rows) > 1:
+                waypoints['C'] = rows[1]['approach_pose']
+                waypoints['D'] = rows[1]['scan_end_pose']
+        else:
+            return None
+
+        if not waypoints:
+            return None
+        return waypoints
 
     def parse_row(self, raw_row, index):
         """Validate one row definition."""
@@ -406,11 +657,22 @@ class RowPlanBuilderNode(Node):
 
     def publish_status(self):
         """Publish builder status."""
+        trays = self.plan.get('trays', [])
+        rows = self.plan.get('rows', [])
         msg = String()
         msg.data = json.dumps({
             'plan_path': self.plan_path,
-            'row_count': len(self.plan['rows']),
-            'row_ids': [row['id'] for row in self.plan['rows']],
+            'capture_mode': self.capture_mode,
+            'tray_count': len(trays),
+            'tray_ids': [tray['id'] for tray in trays],
+            'incomplete_tray_ids': [
+                tray['id'] for tray in trays
+                if self.next_missing_tray_segment(tray) is not None
+            ],
+            'row_count': len(rows),
+            'row_ids': [row['id'] for row in rows],
+            'pending_tray_id': self.pending_tray_id,
+            'pending_row_id': self.pending_row_id,
             'has_return_home_pose': self.plan.get('return_home_pose') is not None,
         })
         self.status_pub.publish(msg)
@@ -419,7 +681,7 @@ class RowPlanBuilderNode(Node):
         """Publish RViz markers for the generated plan."""
         marker_array = MarkerArray()
         stamp = self.get_clock().now().to_msg()
-        for index, row in enumerate(self.plan['rows']):
+        for index, row in enumerate(self.plan_scan_segments()):
             base_id = index * 20
 
             # Blue = approach pose. Green = goal / scan-end pose.
@@ -476,7 +738,7 @@ class RowPlanBuilderNode(Node):
                     'generated_approach_label',
                     base_id + 5,
                     row['approach_pose'],
-                    f"{row['id']} APPROACH",
+                    f"{row['id']} START",
                     (0.1, 0.7, 1.0, 1.0),
                     stamp,
                 )
@@ -486,7 +748,7 @@ class RowPlanBuilderNode(Node):
                     'generated_goal_label',
                     base_id + 6,
                     row['scan_end_pose'],
-                    f"{row['id']} GOAL / SCAN END",
+                    f"{row['id']} END",
                     (0.0, 1.0, 0.25, 1.0),
                     stamp,
                 )
@@ -509,13 +771,52 @@ class RowPlanBuilderNode(Node):
                     'pending_approach_label',
                     100001,
                     self.pending_approach_pose,
-                    f'{self.next_capture_row_id()} PENDING APPROACH',
+                    f'{self.next_pending_capture_label()} PENDING START',
                     (1.0, 0.9, 0.0, 1.0),
                     stamp,
                 )
             )
 
         self.marker_pub.publish(marker_array)
+
+    def plan_scan_segments(self):
+        """Return all complete row/segment definitions for visualization."""
+        segments = []
+        for row in self.plan.get('rows', []):
+            segments.append(row)
+
+        for tray in self.plan.get('trays', []):
+            tray_id = tray['id']
+            waypoints = tray.get('waypoints', {})
+            for start_key, end_key in [('A', 'B'), ('C', 'D')]:
+                if start_key not in waypoints or end_key not in waypoints:
+                    continue
+                segment_id = f'{start_key}_to_{end_key}'
+                segments.append({
+                    'id': f'{tray_id}_{segment_id}',
+                    'tray_id': tray_id,
+                    'segment_id': segment_id,
+                    'approach_pose': waypoints[start_key],
+                    'scan_end_pose': waypoints[end_key],
+                })
+
+        return segments
+
+    def next_pending_capture_label(self):
+        """Return a readable label for the pending pose marker."""
+        if self.capture_mode == 'row':
+            return self.next_capture_row_id()
+
+        tray_id = self.next_capture_tray_id()
+        tray = self.find_tray(tray_id)
+        segment = (
+            self.next_missing_tray_segment(tray)
+            if tray is not None
+            else ('A', 'B')
+        )
+        if segment is None:
+            return tray_id
+        return f'{tray_id} {segment[0]}->{segment[1]}'
 
     @staticmethod
     def make_pose_marker(namespace, marker_id, pose, marker_type, color, stamp):
