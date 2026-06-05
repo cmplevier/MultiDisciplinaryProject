@@ -4,7 +4,7 @@ twist_mux:
       joystick:
         topic: cmd_vel_joy
         timeout: 0.5
-        priority: 400
+        priority: 100
       keyboard:
         topic: cmd_vel_key
         timeout: 0.5
@@ -14,7 +14,7 @@ twist_mux:
         timeout: 0.5
         priority: 88
       navigation:
-        topic: cmd_vel_nav_mdp
+        topic: cmd_vel_nav
         timeout: 0.2
         priority: 80
       idle:
