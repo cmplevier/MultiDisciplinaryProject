@@ -363,6 +363,9 @@ ros2 launch mdp_mainloop mainloop.launch.py \
   use_sim_time:=true \
   clear_history:=true \
   cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped \
+  strafe_block_unknown_costmap:=true \
+  strafe_block_timeout_sec:=8.0 \
+  blocked_tray_retry_delay_sec:=60.0 \
   plan_path:=~/mdp_ws/generated_row_plan.json
 ```
 
@@ -372,10 +375,22 @@ This launch starts:
 mdp_mainloop_node  # executes tray NAV + STRAFE tasks
 ```
 
-The executor follows the tray order in the JSON file. If a strafe is
-blocked by the local costmap for too long, that tray is temporarily
-skipped; after the robot completes another tray segment, skipped trays
-become eligible again.
+The executor follows the tray order in the JSON file. During strafing,
+the local costmap filters the strafe command. Occupied cells, and unknown
+cells when `strafe_block_unknown_costmap:=true`, make the robot publish a
+zero velocity and wait. If the strafe stays blocked longer than
+`strafe_block_timeout_sec`, the whole tray is skipped, the next plan
+choice is a random unblocked tray, and then the executor continues from
+that point in JSON order. The skipped tray remains blocked until
+`blocked_tray_retry_delay_sec` expires.
+
+Mission history is now a run log, not a permanent skip list. Completed
+segments are skipped only inside the current mission pass. Restarting the
+executor, or launching with `loop_mission:=true`, lets finished trays be
+visited again while preserving their `completed_count` in the history
+file. If a tray is blocked and all other unfinished work is done, the
+executor can start another pass over the unblocked trays while waiting
+for the blocked tray cooldown.
 
 Terminal 3: check that the executor has a robot pose and is waiting for
 autonomy.

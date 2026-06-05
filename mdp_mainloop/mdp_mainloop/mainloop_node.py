@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import random
 import time
 from datetime import datetime
 
@@ -58,12 +59,14 @@ class MainLoopNode(Node):
         self.declare_parameter('strafe_require_costmap', False)
         self.declare_parameter('strafe_costmap_timeout_sec', 1.0)
         self.declare_parameter('strafe_costmap_obstacle_threshold', 65)
-        self.declare_parameter('strafe_block_unknown_costmap', False)
+        self.declare_parameter('strafe_block_unknown_costmap', True)
         self.declare_parameter('strafe_collision_radius', 0.18)
         self.declare_parameter('strafe_lookahead_time', 1.0)
         self.declare_parameter('strafe_lookahead_step', 0.1)
         self.declare_parameter('strafe_avoidance_x_speed', 0.05)
         self.declare_parameter('strafe_block_timeout_sec', 8.0)
+        self.declare_parameter('blocked_tray_selection_mode', 'random_tray')
+        self.declare_parameter('blocked_tray_retry_delay_sec', 60.0)
 
         self.plan_path = self.expand_path('plan_path')
         self.load_plan_file_enabled = self.get_parameter(
@@ -116,6 +119,12 @@ class MainLoopNode(Node):
         self.strafe_block_timeout_sec = self.get_parameter(
             'strafe_block_timeout_sec'
         ).value
+        self.blocked_tray_selection_mode = str(
+            self.get_parameter('blocked_tray_selection_mode').value
+        ).lower()
+        self.blocked_tray_retry_delay_sec = self.get_parameter(
+            'blocked_tray_retry_delay_sec'
+        ).value
 
         cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
         stop_topic = self.get_parameter('cmd_vel_stop_topic').value
@@ -147,6 +156,7 @@ class MainLoopNode(Node):
         self.retry_count = 0
         self.last_status_time = 0.0
         self.plan_loaded = False
+        self.completed_task_ids = set()
         self.local_costmap = None
         self.last_costmap_time = None
         self.strafe_blocked_since = None
@@ -220,7 +230,7 @@ class MainLoopNode(Node):
         return os.path.expanduser(str(value))
 
     def load_history(self):
-        """Load completed task ids from disk."""
+        """Load the persistent run log from disk."""
         if not os.path.exists(self.history_path):
             self.history = {}
             return
@@ -235,16 +245,28 @@ class MainLoopNode(Node):
             self.history = {}
 
     def save_history(self, task, duration):
-        """Persist a successfully completed task."""
+        """Persist a successful task without making it permanently ineligible."""
         task_id = task['task_id']
+        previous = self.history.get(task_id, {})
+        try:
+            previous_count = previous.get('completed_count')
+            if previous_count is None and 'completed_at' in previous:
+                previous_count = 1
+            completed_count = int(previous_count or 0) + 1
+        except (TypeError, ValueError):
+            completed_count = 1
+
         self.history[task_id] = {
-            'completed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'completed_count': completed_count,
+            'last_completed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'duration': f'{duration:.1f}s',
+            'last_duration': f'{duration:.1f}s',
             'task_type': task['type'],
             'row_id': task.get('row_id'),
             'tray_id': task.get('tray_id'),
             'segment_id': task.get('segment_id'),
         }
+        self.completed_task_ids.add(task_id)
 
         try:
             with open(self.history_path, 'w', encoding='utf-8') as handle:
@@ -434,7 +456,7 @@ class MainLoopNode(Node):
     def get_first_incomplete_task(self):
         """Return the first plan index that is not in mission history."""
         for index, task in enumerate(self.mission_tasks):
-            if task['task_id'] not in self.history:
+            if task['task_id'] not in self.completed_task_ids:
                 return index
         return len(self.mission_tasks)
 
@@ -720,13 +742,27 @@ class MainLoopNode(Node):
     def has_pending_plan_task(self):
         """Return true when the saved plan still has incomplete tasks."""
         return any(
-            task['task_id'] not in self.history
+            task['task_id'] not in self.completed_task_ids
             for task in self.mission_tasks
         )
 
     def start_next_plan_task(self):
         """Load the next incomplete task from the saved plan."""
+        self.release_expired_blocked_trays()
         task_index = self.choose_next_plan_task_index()
+        if (
+            task_index is None
+            and self.blocked_trays
+            and self.has_revisitable_unblocked_task()
+        ):
+            self.get_logger().info(
+                'No unfinished unblocked tray tasks remain; starting '
+                'another pass while blocked trays cool down.'
+            )
+            self.completed_task_ids.clear()
+            self.current_task_index = 0
+            task_index = self.choose_next_plan_task_index()
+
         if task_index is None and self.blocked_trays:
             self.get_logger().info(
                 'No unblocked tray tasks remain; retrying blocked trays.'
@@ -754,20 +790,37 @@ class MainLoopNode(Node):
 
     def choose_next_plan_task_index(self):
         """Choose the next incomplete task, respecting temporary tray blocks."""
+        selection_mode = self.next_plan_selection_mode
         eligible = self.eligible_plan_task_indices()
         if not eligible:
             return None
 
-        if self.next_plan_selection_mode == 'revisit':
-            self.next_plan_selection_mode = None
-            return min(eligible)
-
         self.next_plan_selection_mode = None
+        if selection_mode in ('random', 'random_tray'):
+            return self.choose_random_tray_task_index(eligible)
+
         ordered = sorted(eligible)
         for index in ordered:
             if index >= self.current_task_index:
                 return index
         return ordered[0]
+
+    def choose_random_tray_task_index(self, eligible):
+        """Choose a random tray, then its first eligible segment."""
+        by_tray = {}
+        no_tray = []
+        for index in eligible:
+            tray_id = self.mission_tasks[index].get('tray_id')
+            if tray_id is None:
+                no_tray.append(index)
+            else:
+                by_tray.setdefault(tray_id, []).append(index)
+
+        if by_tray:
+            tray_id = random.choice(list(by_tray.keys()))
+            return min(by_tray[tray_id])
+
+        return random.choice(no_tray or eligible)
 
     def eligible_plan_task_indices(self):
         """Return incomplete task indices allowed to run now."""
@@ -779,7 +832,7 @@ class MainLoopNode(Node):
 
     def plan_task_is_eligible(self, task):
         """Return true when a saved-plan task can run now."""
-        if task['task_id'] in self.history:
+        if task['task_id'] in self.completed_task_ids:
             return False
 
         tray_id = task.get('tray_id')
@@ -794,11 +847,50 @@ class MainLoopNode(Node):
     def has_incomplete_scan_tasks(self):
         """Return true while scan/strafe tasks remain incomplete."""
         for task in self.mission_tasks:
-            if task['task_id'] in self.history:
+            if task['task_id'] in self.completed_task_ids:
                 continue
             if task['type'] in ('SCAN_ROW', 'STRAFE_ONLY'):
                 return True
         return False
+
+    def has_revisitable_unblocked_task(self):
+        """Return true if a completed non-blocked scan can run again."""
+        for task in self.mission_tasks:
+            if task['task_id'] not in self.completed_task_ids:
+                continue
+            if task['type'] not in ('SCAN_ROW', 'STRAFE_ONLY'):
+                continue
+            tray_id = task.get('tray_id')
+            if tray_id is not None and tray_id in self.blocked_trays:
+                continue
+            return True
+        return False
+
+    def release_expired_blocked_trays(self):
+        """Make temporarily blocked trays eligible after their cooldown."""
+        if not self.blocked_trays:
+            return
+
+        if self.blocked_tray_retry_delay_sec <= 0.0:
+            released = sorted(self.blocked_trays.keys())
+            self.blocked_trays.clear()
+        else:
+            now = time.time()
+            released = []
+            for tray_id, block in list(self.blocked_trays.items()):
+                retry_after = block.get('retry_after_time')
+                if retry_after is None:
+                    blocked_at = block.get('blocked_at_time', now)
+                    retry_after = blocked_at + self.blocked_tray_retry_delay_sec
+                if now >= retry_after:
+                    released.append(tray_id)
+                    self.blocked_trays.pop(tray_id, None)
+
+        if released:
+            self.get_logger().info(
+                'Re-enabled blocked tray/trays after cooldown: '
+                + ', '.join(released)
+            )
 
     @staticmethod
     def is_return_home_task(task):
@@ -808,11 +900,11 @@ class MainLoopNode(Node):
     def handle_mission_complete(self):
         """Stop or restart after all saved-plan tasks are complete."""
         if self.loop_mission and self.mission_tasks:
-            self.get_logger().info('Mission complete; restarting plan loop')
-            self.history = {}
+            self.get_logger().info(
+                'Mission cycle complete; restarting without clearing history'
+            )
+            self.completed_task_ids.clear()
             self.blocked_trays.clear()
-            if os.path.exists(self.history_path):
-                os.remove(self.history_path)
             self.current_task_index = 0
             self.state = 'START_NEXT_TASK'
             return
@@ -1206,10 +1298,15 @@ class MainLoopNode(Node):
             duration,
         )
 
+        blocked_at_time = time.time()
         self.blocked_trays[tray_id] = {
             'reason': reason,
             'task_id': task['task_id'],
             'blocked_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'blocked_at_time': blocked_at_time,
+            'retry_after_time': (
+                blocked_at_time + self.blocked_tray_retry_delay_sec
+            ),
         }
         self.get_logger().warn(
             f"Tray {tray_id} temporarily blocked by {task['task_id']} "
@@ -1223,6 +1320,7 @@ class MainLoopNode(Node):
         self.canceling_for_pause = False
         self.strafe_blocked_since = None
         self.retry_count = 0
+        self.next_plan_selection_mode = self.blocked_tray_selection_mode
 
         if was_external:
             self.state = (
@@ -1283,7 +1381,6 @@ class MainLoopNode(Node):
 
         if success:
             self.save_history(task, duration)
-            self.release_blocked_trays_after_progress(task)
 
         self.publish_task_result(success, reason, duration)
 
@@ -1317,26 +1414,6 @@ class MainLoopNode(Node):
             self.state = 'IDLE'
 
         self.publish_status(force=True)
-
-    def release_blocked_trays_after_progress(self, completed_task):
-        """Re-enable skipped trays after progress on another tray."""
-        completed_tray = completed_task.get('tray_id')
-        if completed_tray is None or not self.blocked_trays:
-            return
-
-        released = [
-            tray_id for tray_id in self.blocked_trays
-            if tray_id != completed_tray
-        ]
-        for tray_id in released:
-            self.blocked_trays.pop(tray_id, None)
-
-        if released:
-            self.next_plan_selection_mode = 'revisit'
-            self.get_logger().info(
-                'Re-enabled skipped tray/trays after progress: '
-                + ', '.join(sorted(released))
-            )
 
     def publish_task_result(self, success, reason, duration=None):
         """Publish a JSON task result message."""
@@ -1441,7 +1518,7 @@ class MainLoopNode(Node):
     def dashboard_task_line(self, index, task):
         """Format one task for the dashboard."""
         task_id = task['task_id']
-        if task_id in self.history:
+        if task_id in self.completed_task_ids:
             status = '[DONE]'
         elif self.current_task is not None and task_id == self.current_task[
             'task_id'
@@ -1455,8 +1532,11 @@ class MainLoopNode(Node):
         line = f"{status} {task_id} ({task['type']})"
         if task.get('tray_id') in self.blocked_trays:
             line += ' - tray blocked'
-        if task_id in self.history:
+        if task_id in self.completed_task_ids:
             line += f" - {self.history[task_id]['duration']}"
+        elif task_id in self.history:
+            count = self.history[task_id].get('completed_count', 1)
+            line += f' - runs={count}'
         return line
 
     def publish_markers(self):
@@ -1498,7 +1578,7 @@ class MainLoopNode(Node):
         task_id = task['task_id']
         if task.get('tray_id') in self.blocked_trays:
             return (1.0, 0.0, 0.0, 0.85)
-        if task_id in self.history:
+        if task_id in self.completed_task_ids:
             return (0.3, 0.3, 0.3, 0.7)
         if self.current_task is not None and task_id == self.current_task[
             'task_id'

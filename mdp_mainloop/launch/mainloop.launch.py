@@ -16,8 +16,17 @@ def generate_launch_description():
     strafe_costmap_enabled = LaunchConfiguration('strafe_costmap_enabled')
     strafe_costmap_topic = LaunchConfiguration('strafe_costmap_topic')
     strafe_require_costmap = LaunchConfiguration('strafe_require_costmap')
+    strafe_block_unknown_costmap = LaunchConfiguration(
+        'strafe_block_unknown_costmap'
+    )
     strafe_block_timeout_sec = LaunchConfiguration(
         'strafe_block_timeout_sec'
+    )
+    blocked_tray_selection_mode = LaunchConfiguration(
+        'blocked_tray_selection_mode'
+    )
+    blocked_tray_retry_delay_sec = LaunchConfiguration(
+        'blocked_tray_retry_delay_sec'
     )
 
     return LaunchDescription([
@@ -79,9 +88,24 @@ def generate_launch_description():
             description='Stop strafing if the local costmap is unavailable'),
 
         DeclareLaunchArgument(
+            'strafe_block_unknown_costmap',
+            default_value='true',
+            description='Treat unknown local-costmap cells as blocked'),
+
+        DeclareLaunchArgument(
             'strafe_block_timeout_sec',
             default_value='8.0',
-            description='Seconds to wait before retrying a blocked strafe'),
+            description='Seconds to wait before skipping a blocked tray'),
+
+        DeclareLaunchArgument(
+            'blocked_tray_selection_mode',
+            default_value='random_tray',
+            description='Selection after blocked strafe: random_tray or ordered'),
+
+        DeclareLaunchArgument(
+            'blocked_tray_retry_delay_sec',
+            default_value='60.0',
+            description='Seconds before a skipped tray can be retried'),
 
         Node(
             package='mdp_mainloop',
@@ -100,7 +124,10 @@ def generate_launch_description():
                 {'strafe_costmap_enabled': strafe_costmap_enabled},
                 {'strafe_costmap_topic': strafe_costmap_topic},
                 {'strafe_require_costmap': strafe_require_costmap},
+                {'strafe_block_unknown_costmap': strafe_block_unknown_costmap},
                 {'strafe_block_timeout_sec': strafe_block_timeout_sec},
+                {'blocked_tray_selection_mode': blocked_tray_selection_mode},
+                {'blocked_tray_retry_delay_sec': blocked_tray_retry_delay_sec},
             ]
         )
     ])
