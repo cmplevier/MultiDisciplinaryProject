@@ -35,6 +35,8 @@ setup(
             'mdp_mainloop.row_plan_builder_node:main',
             'row_plan_validator_node = '
             'mdp_mainloop.row_plan_validator_node:main',
+            'auto_tray_waypoint_node = '
+            'mdp_mainloop.auto_tray_waypoint_node:main',
         ],
     },
 )

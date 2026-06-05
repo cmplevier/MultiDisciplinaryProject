@@ -271,6 +271,42 @@ The generated file is written here:
 ~/mdp_ws/generated_row_plan.json
 ```
 
+### 1a. Automatic Tray Waypoint Authoring
+
+Use this when the trays are visible as occupied black regions in the map.
+The node listens to RViz `/clicked_point`, finds the connected occupied
+map component under the click, fits a rectangle around it, enlarges that
+rectangle, and writes tray waypoints `A/B/C/D`.
+Run this instead of `row_plan_authoring.launch.py` when you want
+automatic tray generation.
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_mainloop auto_tray_waypoint_authoring.launch.py \
+  clear_plan:=true \
+  plan_path:=~/mdp_ws/generated_row_plan.json \
+  longitudinal_margin_m:=0.20 \
+  lateral_offset_m:=0.35
+```
+
+For each tray, publish the tray ID, then use RViz `Publish Point` and
+click near the center of the black tray obstacle:
+
+```bash
+ros2 topic pub --once /row_plan/tray_id std_msgs/String "{data: tray_1}"
+```
+
+Then publish `tray_2`, `tray_3`, etc. before the next tray click. The
+generated waypoint yaw faces the tray, so `A -> B` and `C -> D` are
+lateral strafe segments. Increase `lateral_offset_m` if the robot is too
+close to the tray, and increase `longitudinal_margin_m` if the scan
+should start/end farther beyond the tray ends.
+
+Generated markers are published on `/row_plan/auto_tray_markers`.
+
 The builder defaults to tray capture mode. In RViz, use the two
 row-plan pose tools:
 
