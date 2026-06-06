@@ -1,377 +1,131 @@
-# MDP 2026 — FloraNova Greenhouse Robot
+# MDP 2026 - FloraNova Greenhouse Robot
 
-TU Delft RO47007 Multidisciplinary Project. MIRTE Master V2, ROS2 Humble.
+TU Delft RO47007 Multidisciplinary Project. MIRTE Master V2, ROS 2 Humble.
 
-## Setup
+This README is written as an operator guide. The commands are meant to be
+copied into terminals from the workspace root, `~/mdp_ws`.
 
-Make a workspace folder and clone the repo inside the /src folder:
+## Quick Rules
+
+- Use ROS 2 Humble.
+- Open a new terminal for each long-running launch command.
+- In every new terminal, source ROS and the workspace first.
+- Use the automatic tray waypoint labelling workflow:
+  `auto_tray_waypoint_authoring.launch.py`.
+- Do not use the old manual `row_plan_authoring.launch.py` workflow unless you
+  are intentionally debugging the old builder.
+
+## Repository Layout
+
+```text
+mdp_bringup/        Team bringup helpers, including the real-robot twist_mux
+mdp_gazebo/         Gazebo greenhouse world and simulated MIRTE launch
+mdp_localization/   AMCL config and saved maps
+mdp_navigation/     Nav2, localization, simulation-navigation launch files
+mdp_mainloop/       Automatic tray waypoint labelling and mission executor
+mdp_perception/     Perception node and model files
+mdp_slam/           SLAM toolbox mapping launch and config
+mdp_teleop/         Joystick and keyboard teleop helpers
+```
+
+## First-Time Setup
+
+Create the workspace and clone this repository:
 
 ```bash
-mkdir -p mdp_ws/src
-cd mdp_ws/src
+mkdir -p ~/mdp_ws/src
+cd ~/mdp_ws/src
 git clone https://gitlab.tudelft.nl/cor/ro47007/2026/group_25/mdp-packages.git
 ```
 
-or (if using ssh key)
+SSH clone alternative:
 
 ```bash
+mkdir -p ~/mdp_ws/src
+cd ~/mdp_ws/src
 git clone git@gitlab.tudelft.nl:cor/ro47007/2026/group_25/mdp-packages.git
 ```
 
-From the /src folder, clone the source repos:
+Import the external repositories listed in `sources.repos`:
 
 ```bash
-cd src
+cd ~/mdp_ws/src
 vcs import < mdp-packages/sources.repos
 ```
 
-Return to workspace root:
+Install ROS dependencies and build:
 
 ```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-If you get issues during the colcon build of mirte_telemetrix_cppsaying:
-
-```bash 
-Failed   <<< mirte_telemetrix_cppsaying 
-```
-
-It is because `libs/tmx-cpp` is missing its `CMakeLists.txt` as `tmx-cpp` is a submodule. To Fix:
+If `mirte_telemetrix_cpp` fails because `libs/tmx-cpp` is missing a
+`CMakeLists.txt`, initialize the MIRTE submodules and build again:
 
 ```bash
-cd ~mdp_ws/src/mirte-ros-packages
+cd ~/mdp_ws/src/mirte-ros-packages
 git submodule update --init --recursive
-```
 
-Then go bach to `~/mdp2026` and build again.
-
-## Repo Structure
-
-```
-mdp_bringup/          # Team launch files (sim + real)
-mdp_gazebo/           # Custom world extensions
-mdp_plant_monitor/    # Plant health detection + digital twin feed
-mdp_slm_tts/          # SLM + TTS robot personality
-```
-
-## Simulation And Navigation
-
-### Simulation
-
-Launch Gazebo with MIRTE Master in the custom greenhouse world. Run this from the workspace root in one terminal:
-
-```bash
+cd ~/mdp_ws
 source /opt/ros/humble/setup.bash
+colcon build --symlink-install
 source install/setup.bash
-ros2 launch mdp_gazebo greenhouse_world.launch.xml rviz:=false
 ```
 
-The `rviz:=false` argument keeps Gazebo from opening its own RViz window, because the navigation launch below opens the combined localization/navigation RViz config.
+## Build After Code Changes
 
-In a second terminal, launch localization, Nav2, and RViz in simulation mode:
-
-```bash
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-ros2 launch mdp_navigation nav2_with_localization_and_rviz.launch.py use_sim_time:=true
-```
-
-Simulation mode uses:
-
-```text
-clock: simulation time
-odom topic: /odom
-Nav2 cmd_vel output: /mirte_base_controller/cmd_vel_unstamped
-```
-
-Simulation keyboard teleop:
-
-```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/mirte_base_controller/cmd_vel_unstamped
-```
-
-### Real Robot
-
-On the real robot, first start the MIRTE hardware bringup:
-
-```bash
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-ros2 launch mirte_bringup minimal_master.launch.py
-```
-
-In another terminal, launch localization, Nav2, and RViz with the default real-robot settings:
-
-```bash
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-ros2 launch mdp_navigation nav2_with_localization_and_rviz.launch.py
-```
-
-Real robot mode uses:
-
-```text
-clock: wall time
-odom topic: /mirte_base_controller/odom
-Nav2 cmd_vel output: /mirte_base_controller/cmd_vel
-```
-
-Real robot keyboard teleop:
-
-```bash
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r /cmd_vel:=/mirte_base_controller/cmd_vel
-```
-
-Before starting navigation goals, these checks must pass:
-
-```bash
-ros2 topic hz /mirte_base_controller/odom
-ros2 run tf2_ros tf2_echo odom base_link
-ros2 control list_controllers
-```
-
-The `tf2_echo` command must show a live transform from `odom` to `base_link`. The controllers list should show `mirte_base_controller` active. If `odom -> base_link` is missing, Nav2 can make a global plan but the local costmap and velocity controller will not work.
-
-### Shared Options
-
-Both simulation and real robot launches use the default map and parameter files:
-
-```text
-map: mdp_localization/maps/asym_map.yaml
-localization params: mdp_localization/config/amcl_params.yaml
-navigation params: mdp_navigation/config/nav2_params.yaml
-rviz config: mdp_navigation/rviz/combined.rviz
-```
-
-To use another map or RViz config on the real robot:
-
-```bash
-ros2 launch mdp_navigation nav2_with_localization_and_rviz.launch.py \
-  map:=/absolute/path/to/map.yaml \
-  rviz_config_file:=/absolute/path/to/config.rviz
-```
-
-In simulation, keep `use_sim_time:=true` in the same command:
-
-```bash
-ros2 launch mdp_navigation nav2_with_localization_and_rviz.launch.py \
-  use_sim_time:=true \
-  map:=/absolute/path/to/map.yaml \
-  rviz_config_file:=/absolute/path/to/config.rviz
-```
-
-The `map` argument must point to a real `.yaml` file, not the placeholder path above. If the map does not appear in RViz, check that localization loaded it and that the robot TF chain exists:
-
-```bash
-ros2 lifecycle get /map_server
-ros2 topic echo --once /map
-ros2 run tf2_ros tf2_echo odom base_link
-ros2 run tf2_ros tf2_echo map odom
-```
-
-`/map` comes from `map_server`. The `map -> odom` transform and `/amcl_pose` come from AMCL, but AMCL needs live laser scans and an existing `odom -> base_link` transform first. If `odom -> base_link` is missing, start the Gazebo or real-robot bringup and make sure `mirte_base_controller` is active before sending Nav2 goals.
-
-For custom setups, the important launch arguments are:
-
-```bash
-use_sim_time:=true|false
-odom_topic:=/odom|/mirte_base_controller/odom
-cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped|/mirte_base_controller/cmd_vel
-```
-
-## Row Plan Authoring And Mission Execution
-
-The goal of this pipeline is to scan trays from a discrete plan. Each
-tray has four waypoints: the robot navigates to `A`, strafes from `A` to
-`B`, navigates from `B` to `C`, then strafes from `C` to `D`.
-
-The system is intentionally modular so each part can be tested
-separately before the robot moves:
-
-```text
-row_plan_builder_node
-  Used during authoring only.
-  Receives RViz arrows or JSON commands.
-  Writes ~/mdp_ws/generated_row_plan.json.
-  Publishes RViz markers so you can visually check the plan.
-
-row_plan_validator_node
-  Used after authoring.
-  Reads the generated JSON file.
-  Checks that trays, IDs, and A/B/C/D poses are valid.
-
-mdp_navigation stack
-  Starts simulation, localization, map server, Nav2, and RViz.
-  Provides /amcl_pose and the /navigate_to_pose action server.
-  Publishes Nav2 velocity commands for the approach motion.
-
-mainloop_node
-  Used during execution.
-  Reads ~/mdp_ws/generated_row_plan.json.
-  Sends each tray segment start pose to Nav2.
-  After Nav2 succeeds, publishes direct strafe velocity commands until
-  the segment end pose is reached.
-```
-
-The data flow is:
-
-```text
-RViz arrows
-  -> row_plan_builder_node
-  -> generated_row_plan.json
-  -> row_plan_validator_node
-  -> mainloop_node
-  -> Nav2 approach + direct strafe
-```
-
-The launch flow is split into two phases so pose creation and robot
-execution can be debugged separately:
-
-```text
-1. Author the row plan.
-   Create and inspect generated_row_plan.json. The robot does not move.
-
-2. Execute the finished plan.
-   Start navigation, start the executor, then enable autonomy.
-```
-
-### 0. Build
-
-Run this after changing any package code or launch files:
+Use this after changing package code, launch files, config files, or this repo:
 
 ```bash
 cd ~/mdp_ws
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select mdp_mainloop mdp_navigation
+colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 1. Author The Row Plan
+For a faster build when only the MDP packages changed:
 
-This creates the JSON file only. It starts a map server, RViz, and the
-row-plan builder. It does not start Nav2 navigation or the mission
-executor, so the robot will not move.
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install \
+  --packages-select \
+  mdp_bringup \
+  mdp_gazebo \
+  mdp_localization \
+  mdp_navigation \
+  mdp_mainloop \
+  mdp_perception \
+  mdp_slam \
+  mdp_teleop
+source install/setup.bash
+```
+
+## Terminal Setup
+
+Run this at the top of every new terminal:
 
 ```bash
 cd ~/mdp_ws
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-
-ros2 launch mdp_mainloop row_plan_authoring.launch.py \
-  clear_plan:=true \
-  plan_path:=~/mdp_ws/generated_row_plan.json
 ```
 
-The generated file is written here:
-
-```text
-~/mdp_ws/generated_row_plan.json
-```
-
-### 1a. Automatic Tray Waypoint Authoring
-
-Use this when the trays are visible as occupied black regions in the map.
-The node listens to RViz `/clicked_point`, finds the connected occupied
-map component under the click, fits a rectangle around it, enlarges that
-rectangle, and writes tray waypoints `A/B/C/D`.
-Run this instead of `row_plan_authoring.launch.py` when you want
-automatic tray generation.
+Optional, if the robot/laptop network uses a specific ROS domain:
 
 ```bash
-cd ~/mdp_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-
-ros2 launch mdp_mainloop auto_tray_waypoint_authoring.launch.py \
-  clear_plan:=true \
-  plan_path:=~/mdp_ws/generated_row_plan.json \
-  longitudinal_margin_m:=0.20 \
-  lateral_offset_m:=0.35
+export ROS_DOMAIN_ID=0
 ```
 
-For each tray, publish the tray ID, then use RViz `Publish Point` and
-click near the center of the black tray obstacle:
+## Simulation
 
-```bash
-ros2 topic pub --once /row_plan/tray_id std_msgs/String "{data: tray_1}"
-```
+### Start Simulation, Localization, Nav2, And RViz
 
-Then publish `tray_2`, `tray_3`, etc. before the next tray click. The
-generated waypoint yaw faces the tray, so `A -> B` and `C -> D` are
-lateral strafe segments. Increase `lateral_offset_m` if the robot is too
-close to the tray, and increase `longitudinal_margin_m` if the scan
-should start/end farther beyond the tray ends.
-
-Generated markers are published on `/row_plan/auto_tray_markers`.
-
-The builder defaults to tray capture mode. In RViz, use the two
-row-plan pose tools:
-
-```text
-Set Row Approach Pose -> /row_plan/approach_pose
-Set Row Goal Pose     -> /row_plan/scan_end_pose
-```
-
-The toolbar may show both as `2D Goal Pose`; check the Tool Properties
-panel if the labels are ambiguous (the left one is the approach one, while the right one is the goal strafing pose).
-
-For each tray:
-
-```text
-1. Publish a tray ID.
-2. Set the approach/start arrow for A.
-3. Set the goal/end arrow for B.
-4. Set the approach/start arrow for C.
-5. Set the goal/end arrow for D.
-```
-
-Example:
-
-```bash
-ros2 topic pub --once /row_plan/tray_id std_msgs/String "{data: tray_1}"
-```
-
-Then click-drag `Set Row Approach Pose`, then click-drag
-`Set Row Goal Pose` for `A -> B`. Repeat the two clicks for `C -> D`.
-Then publish `tray_2`, `tray_3`, etc.
-
-The builder shows:
-
-```text
-blue arrow  = segment start
-green arrow = segment end
-line        = strafe segment
-```
-
-To check the file before running the robot:
-
-```bash
-cat ~/mdp_ws/generated_row_plan.json
-python3 -m json.tool ~/mdp_ws/generated_row_plan.json
-
-ros2 run mdp_mainloop row_plan_validator_node \
-  --ros-args -p plan_path:=~/mdp_ws/generated_row_plan.json
-```
-
-The validator reports the row order and any missing/invalid poses.
-
-### 2. Execute The Finished Plan
-
-Close the authoring launch with `Ctrl+C`. Before launching navigation,
-this command should not show `mdp_row_plan_builder_node` or
-`lifecycle_manager_row_plan_authoring`. If it does, the authoring launch
-is still running.
-
-```bash
-ros2 node list | grep -E "map_server|amcl|lifecycle|row_plan"
-```
-
-Terminal 1: start simulation, localization, Nav2, and RViz. Nav2 will
-publish approach-motion velocity commands to
-`/mirte_base_controller/cmd_vel_unstamped`.
+Terminal 1:
 
 ```bash
 cd ~/mdp_ws
@@ -383,12 +137,644 @@ ros2 launch mdp_navigation sim_nav_loc_rviz.launch.py \
   cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped
 ```
 
-In RViz, set the robot's initial pose with `2D Pose Estimate` if AMCL
-does not already know where the robot is.
+This one command starts Gazebo, the greenhouse world, the MIRTE robot,
+localization, Nav2, and RViz.
 
-Terminal 2: start the mission executor. It reads
-`generated_row_plan.json`, sends Nav2 goals for each segment start, and
-publishes strafe velocity commands to the same velocity topic.
+Parameter meanings:
+
+```text
+use_sim_time
+  true means all nodes use the Gazebo /clock.
+
+cmd_vel_topic
+  Velocity topic used by Nav2 in simulation.
+  Use /mirte_base_controller/cmd_vel_unstamped for the simulated MIRTE base.
+```
+
+Simulation uses the greenhouse/asymmetric map:
+
+```text
+mdp_localization/maps/asym_map.yaml
+```
+
+Do not use the final real-robot map in simulation. The simulated world is the
+greenhouse configuration, so the navigation map must match that environment.
+
+### Simulation Teleop
+
+Keyboard teleop directly to the simulated base:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args \
+  -r /cmd_vel:=/mirte_base_controller/cmd_vel_unstamped
+```
+
+### Simulation Checks
+
+Use these in another terminal:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic hz /mirte_base_controller/odom
+```
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run tf2_ros tf2_echo odom base_link
+```
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 lifecycle get /map_server
+ros2 lifecycle get /amcl
+ros2 action list | grep navigate_to_pose
+```
+
+Before sending goals, RViz should show the map, laser scan, robot model,
+and a reasonable robot pose. If AMCL does not know the pose, use `2D Pose
+Estimate` in RViz.
+
+## Real Robot
+
+### Start MIRTE Hardware
+
+Terminal 1 on the robot:
+
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_bringup twist_mux.launch.py
+```
+
+The MDP `twist_mux` listens to:
+
+```text
+cmd_vel_joy    joystick teleop, highest priority
+cmd_vel_key    keyboard teleop
+cmd_vel_stop   stop command
+cmd_vel_nav    Nav2 and mission executor
+cmd_vel_idle   low-priority idle command
+```
+
+It outputs to:
+
+```text
+/mirte_base_controller/cmd_vel
+```
+
+### Start Real-Robot Localization, Nav2, And RViz
+
+Terminal 3, usually on the laptop that displays RViz:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_navigation nav2_with_localization_and_rviz.launch.py \
+  use_sim_time:=false \
+  cmd_vel_topic:=/cmd_vel_nav
+```
+
+Parameter meanings:
+
+```text
+use_sim_time
+  false means all nodes use wall-clock time, which is required on the real robot.
+
+cmd_vel_topic
+  Velocity topic used by Nav2.
+  Use /cmd_vel_nav when mdp_bringup twist_mux is running.
+```
+
+To use another map on the real robot:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_navigation nav2_with_localization_and_rviz.launch.py \
+  use_sim_time:=false \
+  map:=/absolute/path/to/map.yaml \
+  cmd_vel_topic:=/cmd_vel_nav
+```
+
+Extra parameter:
+
+```text
+map
+  Absolute path to the map YAML file loaded by the map server and AMCL.
+```
+
+### Real-Robot Teleop
+
+Keyboard teleop through the MDP `twist_mux`:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args \
+  -r /cmd_vel:=/cmd_vel_key
+```
+
+Joystick teleop through the MDP `twist_mux`:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_teleop teleop_custom.launch.py \
+  cmd_vel_remap:=/cmd_vel_joy \
+  joy_config:=custom_ps5.yaml
+```
+
+Parameter meanings:
+
+```text
+cmd_vel_remap
+  Topic where the joystick teleop node publishes velocity commands.
+  Use /cmd_vel_joy when mdp_bringup twist_mux is running.
+
+joy_config
+  Joystick configuration file from mdp_teleop/config.
+  Available configs include custom_ps5.yaml, custom_u22.yaml, and ps4.yaml.
+```
+
+### Real-Robot Checks
+
+Run these before starting autonomous motion:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic hz /mirte_base_controller/odom
+```
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run tf2_ros tf2_echo odom base_link
+```
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 control list_controllers
+```
+
+Expected:
+
+```text
+/mirte_base_controller/odom publishes continuously
+odom -> base_link transform is live
+mirte_base_controller is active
+```
+
+If `odom -> base_link` is missing, Nav2 may create a global path but the
+local costmap and controller will not drive correctly.
+
+## Automatic Tray Waypoint Labelling
+
+This is the waypoint authoring workflow to use for the project. It creates
+the JSON file that the mission executor reads later.
+
+The automatic labeller reads the occupancy grid map, waits for RViz
+`Publish Point` clicks, finds the occupied tray blob under each click,
+fits the tray direction, and writes waypoints `A`, `B`, `C`, and `D`.
+
+For each tray:
+
+```text
+A -> B is the first lateral scan/strafe segment.
+C -> D is the second lateral scan/strafe segment.
+```
+
+The generated yaw faces the tray by default, so moving from `A` to `B`
+and from `C` to `D` is lateral motion in the robot frame.
+
+### Start The Automatic Labeller
+
+For the real robot, start the labeller with wall-clock time:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_mainloop auto_tray_waypoint_authoring.launch.py \
+  use_sim_time:=false \
+  map:=/absolute/path/to/real_robot_map.yaml \
+  clear_plan:=true \
+  plan_path:=~/mdp_ws/generated_row_plan.json \
+  longitudinal_margin_m:=0.20 \
+  lateral_offset_m:=0.35 \
+  click_search_radius_m:=0.25 \
+  occupied_threshold:=65
+```
+
+Parameter meanings:
+
+```text
+use_sim_time
+  true in Gazebo, false on the real robot.
+
+map
+  Map YAML file used as the RViz background and occupancy grid.
+  Use the same map that you will use later for real-robot navigation.
+
+clear_plan
+  true starts from an empty JSON file.
+  false keeps existing trays and replaces only trays with matching IDs.
+
+plan_path
+  JSON file that will be created or updated.
+  The mission executor reads this same file later.
+
+longitudinal_margin_m
+  Extra distance before and after the occupied tray ends.
+  Increase it when the scan should start earlier or finish later.
+
+lateral_offset_m
+  Robot-center distance from each side of the tray.
+  Increase it if the robot is too close to the tray.
+
+click_search_radius_m
+  Search radius around the RViz click if the click misses the occupied cell.
+  Increase it if clicks near the tray are ignored.
+
+occupied_threshold
+  Occupancy-grid value treated as an obstacle.
+  The default 65 works for normal black occupied map regions.
+```
+
+### Label Trays In RViz
+
+For each tray, publish the tray ID, then click the black occupied tray
+region in RViz using the `Publish Point` tool. The tray ID message applies
+to the next click only, so publish the ID immediately before clicking that
+tray.
+
+The generated JSON has this shape:
+
+```text
+tray_1 -> waypoints A, B, C, D
+tray_2 -> waypoints A, B, C, D
+tray_3 -> waypoints A, B, C, D
+```
+
+If you publish an ID that already exists, the next click replaces that
+tray's waypoints. If you do not publish an ID, the node creates the next
+available automatic name such as `tray_1` or `tray_2`; for the final mission,
+publish explicit IDs so the tray order is clear.
+
+Tray 1:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic pub --once /row_plan/tray_id std_msgs/String "{data: tray_1}"
+```
+
+Then click near the center of tray 1 in RViz with `Publish Point`.
+
+Tray 2:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic pub --once /row_plan/tray_id std_msgs/String "{data: tray_2}"
+```
+
+Then click near the center of tray 2.
+
+Continue with `tray_3`, `tray_4`, and so on.
+
+The labeller publishes:
+
+```text
+/planner/row_plan              full generated JSON plan
+/row_plan/auto_status          generator status as JSON text
+/row_plan/auto_tray_markers    RViz rectangles, arrows, and waypoint labels
+```
+
+Useful checks while authoring:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic echo /row_plan/auto_status
+```
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+python3 -m json.tool ~/mdp_ws/generated_row_plan.json
+```
+
+## Mission Execution On The Real Robot
+
+Follow these steps in order.
+
+### 0. Start and Connect to MIRTE Hardware
+
+This is required before `twist_mux`, teleop, Nav2, or the mainloop can move
+the robot.
+
+
+### 1. Create The JSON Waypoint File
+
+Start the automatic labeller:
+
+Terminal 1:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_mainloop auto_tray_waypoint_authoring.launch.py \
+  use_sim_time:=false \
+  map:=/absolute/path/to/real_robot_map.yaml \
+  clear_plan:=true \
+  plan_path:=~/mdp_ws/generated_row_plan.json \
+  longitudinal_margin_m:=0.20 \
+  lateral_offset_m:=0.35 \
+  click_search_radius_m:=0.25 \
+  occupied_threshold:=65
+```
+
+In RViz, use `Publish Point` to click each black tray region on the map.
+Assign the tray ID immediately before the click.
+
+For tray 1:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic pub --once /row_plan/tray_id std_msgs/String "{data: tray_1}"
+```
+
+Then click tray 1 in RViz.
+
+For tray 2:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic pub --once /row_plan/tray_id std_msgs/String "{data: tray_2}"
+```
+
+Then click tray 2 in RViz. Continue with `tray_3`, `tray_4`, and so on.
+
+
+### 2. Launch The Twist Mux
+
+Terminal 2 on the robot:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_bringup twist_mux.launch.py
+```
+
+The MDP `twist_mux` lets teleop and navigation share the real robot velocity
+output. Nav2 and the mainloop must publish to `/cmd_vel_nav` when this mux is
+running.
+
+### 3. Launch Teleop
+
+Keyboard teleop through `twist_mux`:
+
+Terminal 3:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args \
+  -r /cmd_vel:=/cmd_vel_key
+```
+
+Joystick teleop alternative:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_teleop teleop_custom.launch.py \
+  cmd_vel_remap:=/cmd_vel_joy \
+  joy_config:=custom_ps5.yaml
+```
+
+Use teleop to verify that the robot can move. Stop teleop commands before
+enabling autonomy.
+
+### 4. Launch Navigation With RViz
+
+Terminal 4:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_navigation nav2_with_localization_and_rviz.launch.py \
+  use_sim_time:=false \
+  cmd_vel_topic:=/cmd_vel_nav \
+  map:=/absolute/path/to/real_robot_map.yaml
+```
+
+In RViz, set the initial pose with `2D Pose Estimate` if needed. Before
+continuing, `/amcl_pose` must publish and Nav2 must have the
+`navigate_to_pose` action.
+
+Check:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic echo --once /amcl_pose
+ros2 action list | grep navigate_to_pose
+```
+
+### 5. Launch The Mainloop
+
+Terminal 5:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_mainloop mainloop.launch.py \
+  use_sim_time:=false \
+  clear_history:=true \
+  cmd_vel_topic:=/cmd_vel_nav \
+  strafe_block_unknown_costmap:=true \
+  strafe_block_timeout_sec:=8.0 \
+  blocked_tray_retry_delay_sec:=60.0 \
+  plan_path:=~/mdp_ws/generated_row_plan.json
+```
+
+Check that the executor has loaded the plan and is waiting:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic echo --once /amcl_pose
+ros2 topic echo --once /mainloop/status
+```
+
+### 6. Enable Navigation
+
+Enable autonomy after the robot pose is correct in RViz and the path is clear:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic pub -r 2 /autonomous_enabled std_msgs/Bool "{data: true}"
+```
+
+Leave it running until `/mainloop/status` reports
+`"autonomous_enabled": true`, then stop it with `Ctrl+C`.
+
+To pause autonomy:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic pub --once /autonomous_enabled std_msgs/Bool "{data: false}"
+```
+
+Useful monitoring commands:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic echo /mission_dashboard
+```
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic echo /mainloop/status
+```
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic echo /mainloop/task_result
+```
+
+## Simulation Changes For Mission Testing
+
+The real-robot sequence above is the main mission procedure. In simulation,
+do not launch `mdp_bringup twist_mux.launch.py`; the Gazebo greenhouse launch
+already starts the simulation-side controllers and Gazebo twist mux.
+
+Also, simulation must use the greenhouse setup. Use the greenhouse/asymmetric
+map from the simulation package setup, not the final real-robot map.
+
+Change only these commands and parameters for simulation:
+
+```text
+Start simulation/navigation/RViz with:
+  ros2 launch mdp_navigation sim_nav_loc_rviz.launch.py
+
+use_sim_time:
+  false -> true
+
+map:
+  /absolute/path/to/real_robot_map.yaml -> mdp_localization/maps/asym_map.yaml
+  Do not use the final real-robot map in simulation.
+
+automatic labeller:
+  use_sim_time:=true
+  map:=$(ros2 pkg prefix mdp_localization)/share/mdp_localization/maps/asym_map.yaml
+
+Nav2 cmd_vel_topic:
+  /cmd_vel_nav -> /mirte_base_controller/cmd_vel_unstamped
+
+mainloop cmd_vel_topic:
+  /cmd_vel_nav -> /mirte_base_controller/cmd_vel_unstamped
+
+teleop remap:
+  /cmd_vel_key or /cmd_vel_joy -> /mirte_base_controller/cmd_vel_unstamped
+```
+
+Simulation start command:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_navigation sim_nav_loc_rviz.launch.py \
+  use_sim_time:=true \
+  map:=$(ros2 pkg prefix mdp_localization)/share/mdp_localization/maps/asym_map.yaml \
+  cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped
+```
+
+Simulation mainloop command:
 
 ```bash
 cd ~/mdp_ws
@@ -405,103 +791,174 @@ ros2 launch mdp_mainloop mainloop.launch.py \
   plan_path:=~/mdp_ws/generated_row_plan.json
 ```
 
-This launch starts:
+## Mainloop Behavior
+
+The mission executor reads `~/mdp_ws/generated_row_plan.json`.
+
+For each generated tray:
 
 ```text
-mdp_mainloop_node  # executes tray NAV + STRAFE tasks
+1. Navigate to A with Nav2.
+2. Strafe from A to B with direct velocity commands.
+3. Navigate to C with Nav2.
+4. Strafe from C to D with direct velocity commands.
 ```
 
-The executor follows the tray order in the JSON file. During strafing,
-the local costmap filters the strafe command. Occupied cells, and unknown
-cells when `strafe_block_unknown_costmap:=true`, make the robot publish a
-zero velocity and wait. If the strafe stays blocked longer than
-`strafe_block_timeout_sec`, the whole tray is skipped, the next plan
-choice is a random unblocked tray, and then the executor continues from
-that point in JSON order. The skipped tray remains blocked until
-`blocked_tray_retry_delay_sec` expires.
+During strafing, the local costmap filters the strafe command. Occupied
+cells, and unknown cells when `strafe_block_unknown_costmap:=true`, make
+the executor publish zero velocity and wait. If the strafe stays blocked
+longer than `strafe_block_timeout_sec`, the tray is skipped until its
+retry delay expires.
 
-Mission history is now a run log, not a permanent skip list. Completed
-segments are skipped only inside the current mission pass. Restarting the
-executor, or launching with `loop_mission:=true`, lets finished trays be
-visited again while preserving their `completed_count` in the history
-file. If a tray is blocked and all other unfinished work is done, the
-executor can start another pass over the unblocked trays while waiting
-for the blocked tray cooldown.
+Mission history is stored in:
 
-Terminal 3: check that the executor has a robot pose and is waiting for
-autonomy.
+```text
+~/mdp_ws/mission_history.json
+```
+
+Completed segments are skipped only inside the current mission pass.
+Restarting with `clear_history:=true` starts fresh.
+
+## Mapping
+
+For simulation mapping, start Gazebo first:
 
 ```bash
+cd ~/mdp_ws
 source /opt/ros/humble/setup.bash
-source ~/mdp_ws/install/setup.bash
+source install/setup.bash
 
-ros2 topic echo --once /amcl_pose
-ros2 topic echo --once /mainloop/status
+ros2 launch mdp_gazebo greenhouse_world.launch.xml rviz:=false
 ```
 
-If `/amcl_pose` does not print, use `2D Pose Estimate` in RViz and check
-again.
-
-Enable autonomy by publishing the enable message for a few seconds. This
-makes sure the executor receives it.
+Then run the MDP SLAM launch in another terminal:
 
 ```bash
-ros2 topic pub -r 2 /autonomous_enabled std_msgs/Bool "{data: true}"
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch mdp_slam slam_mapping.launch.py
 ```
 
-Leave it running until `/mainloop/status` contains:
+For real-robot mapping, start `minimal_master.launch.py` first, then run
+SLAM toolbox with wall-clock time:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 launch slam_toolbox online_async_launch.py \
+  slam_params_file:=$(ros2 pkg prefix mdp_slam)/share/mdp_slam/config/mapping_params_online_async.yaml \
+  use_sim_time:=false
+```
+
+Save a map:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 run nav2_map_server map_saver_cli -f ~/mdp_ws/my_map
+```
+
+This creates:
 
 ```text
-"autonomous_enabled": true
+~/mdp_ws/my_map.yaml
+~/mdp_ws/my_map.pgm
 ```
 
-Then stop the publisher with `Ctrl+C`. The mission should move from
-`TASK_READY` to `NAVIGATING_TO_APPROACH`, then later to `STRAFING_ROW`.
+Use the YAML path as the `map:=...` argument for navigation and automatic
+tray waypoint labelling.
 
-Useful checks while running:
+## Troubleshooting
+
+Check active nodes:
 
 ```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 node list
+```
+
+Check the map:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 lifecycle get /map_server
+ros2 topic echo --once /map
+```
+
+Check localization:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic echo --once /amcl_pose
+ros2 run tf2_ros tf2_echo map odom
+ros2 run tf2_ros tf2_echo odom base_link
+```
+
+Check Nav2:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 action list | grep navigate_to_pose
+ros2 lifecycle get /controller_server
+ros2 lifecycle get /planner_server
+ros2 lifecycle get /bt_navigator
+```
+
+Check the mission executor:
+
+```bash
+cd ~/mdp_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+ros2 topic echo --once /mainloop/status
 ros2 topic echo /mission_dashboard
-ros2 topic echo /mainloop/status
-ros2 topic echo /mainloop/task_result
-ros2 topic echo /mirte_base_controller/cmd_vel_unstamped
 ```
 
-If the dashboard says `EXECUTOR: TASK_READY` and no velocity appears,
-check:
-
-```bash
-ros2 topic echo --once /mainloop/status
-ros2 topic echo --once /amcl_pose
-```
-
-Common causes are:
+Common problems:
 
 ```text
-autonomous_enabled is false in /mainloop/status
-/amcl_pose is missing because the initial pose was not set
-Nav2 is not active yet
-generated_row_plan.json is missing or invalid
+Map is not visible in RViz
+  Check that /map publishes and that the correct map YAML was passed.
+
+Robot does not localize
+  Set 2D Pose Estimate in RViz and verify /amcl_pose.
+
+Nav2 plans but does not move
+  Check odom -> base_link and the velocity topic.
+
+Real robot does not move
+  Check minimal_master.launch.py, mdp_bringup twist_mux, and controllers.
+  Nav2/mainloop should publish to /cmd_vel_nav when twist_mux is running.
+
+Automatic tray click is ignored
+  Click closer to the black occupied tray region or increase
+  click_search_radius_m.
+
+Generated waypoints are too close to the tray
+  Increase lateral_offset_m.
+
+Generated scan starts/stops too close to tray ends
+  Increase longitudinal_margin_m.
+
+Executor waits in TASK_READY
+  Check /autonomous_enabled, /amcl_pose, Nav2 lifecycle state, and the plan file.
 ```
-
-### Optional Dynamic Updates
-
-To add or replace one tray dynamically:
-
-```bash
-ros2 topic pub --once /row_plan/set_tray std_msgs/String \
-  "{data: '{\"id\": \"tray_3\", \"waypoints\": {\"A\": [1.0, 0.0, 1.57], \"B\": [1.0, 1.2, 1.57], \"C\": [1.4, 1.2, -1.57], \"D\": [1.4, 0.0, -1.57]}}'}"
-```
-
-The builder writes the generated JSON file and publishes the full active
-plan on `/planner/row_plan` for visualization/debugging. For execution,
-restart `mainloop.launch.py` or point it at the updated JSON file.
-
-The executor reports status on `/mainloop/status` and task results on
-`/mainloop/task_result`. Autonomy is still gated by `/autonomous_enabled`.
-
-## Environment
-
-- `ROS_DOMAIN_ID=0` — set in devcontainer, set manually if running natively
-- Offboard laptop and OrangePi must share the same domain ID over LAN
-- Run `xhost +local:docker` on host before launching Gazebo in container
