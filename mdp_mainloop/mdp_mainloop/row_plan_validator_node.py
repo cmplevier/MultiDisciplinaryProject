@@ -43,14 +43,29 @@ class RowPlanValidatorNode(Node):
             return False
 
         rows = plan.get('rows', [])
+        trays = plan.get('trays', [])
+        tray_segment_count = 0
+        for tray in trays:
+            waypoints = tray.get('waypoints', {})
+            if 'A' in waypoints and 'B' in waypoints:
+                tray_segment_count += 1
+            if 'C' in waypoints and 'D' in waypoints:
+                tray_segment_count += 1
+        total_segments = len(rows) + tray_segment_count
         self.get_logger().info(
-            f'Plan OK: {self.plan_path} contains {len(rows)} valid rows'
+            f'Plan OK: {self.plan_path} contains '
+            f'{total_segments} valid scan segment(s)'
         )
         for index, row in enumerate(rows):
             self.get_logger().info(
                 f"{index + 1}. {row['id']}: "
                 f"approach={row['approach_pose']} "
                 f"goal={row.get('goal_pose') or row['scan_end_pose']}"
+            )
+        for index, tray in enumerate(trays):
+            self.get_logger().info(
+                f"{index + 1}. tray {tray.get('id')}: "
+                'A->B and C->D'
             )
         return True
 
@@ -60,11 +75,14 @@ class RowPlanValidatorNode(Node):
         if not isinstance(plan, dict):
             return ['Plan root must be a JSON object']
 
-        rows = plan.get('rows')
+        rows = plan.get('rows', [])
+        trays = plan.get('trays', [])
         if not isinstance(rows, list):
-            return ['Plan must contain a rows list']
-        if not rows:
-            errors.append('Plan contains no rows')
+            return ['rows must be a list when present']
+        if not isinstance(trays, list):
+            return ['trays must be a list when present']
+        if not rows and not trays:
+            errors.append('Plan contains no rows or trays')
 
         seen_ids = set()
         for index, row in enumerate(rows):
@@ -90,7 +108,39 @@ class RowPlanValidatorNode(Node):
                     f'{row_label} has invalid scan_end_pose/goal_pose'
                 )
 
+        seen_tray_ids = set()
+        for index, tray in enumerate(trays):
+            tray_label = f'trays[{index}]'
+            if not isinstance(tray, dict):
+                errors.append(f'{tray_label} must be an object')
+                continue
+
+            tray_id = tray.get('id') or tray.get('tray_id')
+            if not tray_id:
+                errors.append(f'{tray_label} is missing id')
+            elif tray_id in seen_tray_ids:
+                errors.append(f'duplicate tray id: {tray_id}')
+            else:
+                seen_tray_ids.add(tray_id)
+
+            if not self.valid_tray_waypoints(tray.get('waypoints')):
+                errors.append(f'{tray_label} needs valid waypoints A/B/C/D')
+
         return errors
+
+    def valid_tray_waypoints(self, waypoints):
+        """Return true when a tray has four valid waypoint poses."""
+        if isinstance(waypoints, dict):
+            return all(
+                self.is_pose(waypoints.get(name))
+                for name in ['A', 'B', 'C', 'D']
+            )
+        if isinstance(waypoints, list):
+            return (
+                len(waypoints) >= 4
+                and all(self.is_pose(pose) for pose in waypoints[:4])
+            )
+        return False
 
     @staticmethod
     def is_pose(value):

@@ -1,7 +1,24 @@
 <launch>
-  <include file="$(find-pkg-share foxglove_bridge)/launch/foxglove_bridge_launch.xml">
-    
-    <arg name="port" value="8765"/>
+  <node pkg="foxglove_bridge" exec="foxglove_bridge">
 
-  </include>
+    <param name="port" value="8765"/>
+    <param name="message_backlog_size" value="5"/>
+
+    <param name="best_effort_qos_topic_whitelist" value="[
+      '^/camera/color/image_raw/compressed$',
+      '^/gripper_camera/image_raw/compressed$'
+    ]"/>
+    
+    <param name="topic_whitelist" value="[
+      '^/camera/color/image_raw/compressed$',
+      '^/gripper_camera/image_raw/compressed$',
+      '^/mirte_base_controller/cmd_vel$',
+      '^/mirte_base_controller/odom$',
+      '^/scan$',
+      '^/tf$',
+      '^/tf_static$'
+    ]"/>
+
+
+  </node>
 </launch>

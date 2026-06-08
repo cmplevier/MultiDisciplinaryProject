@@ -13,7 +13,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
-        ('share/' + package_name + '/config', ['config/row_plan.json']),
+        ('share/' + package_name + '/config', glob('config/*.json')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -35,6 +35,8 @@ setup(
             'mdp_mainloop.row_plan_builder_node:main',
             'row_plan_validator_node = '
             'mdp_mainloop.row_plan_validator_node:main',
+            'auto_tray_waypoint_node = '
+            'mdp_mainloop.auto_tray_waypoint_node:main',
         ],
     },
 )

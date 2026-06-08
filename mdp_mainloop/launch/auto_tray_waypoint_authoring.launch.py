@@ -10,11 +10,13 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     map_file = LaunchConfiguration('map')
     plan_path = LaunchConfiguration('plan_path')
-    seed_plan_path = LaunchConfiguration('seed_plan_path')
     clear_plan = LaunchConfiguration('clear_plan')
-    capture_mode = LaunchConfiguration('capture_mode')
     launch_rviz = LaunchConfiguration('launch_rviz')
     rviz_config_file = LaunchConfiguration('rviz_config_file')
+    longitudinal_margin_m = LaunchConfiguration('longitudinal_margin_m')
+    lateral_offset_m = LaunchConfiguration('lateral_offset_m')
+    click_search_radius_m = LaunchConfiguration('click_search_radius_m')
+    occupied_threshold = LaunchConfiguration('occupied_threshold')
 
     default_map_file = PathJoinSubstitution([
         FindPackageShare('mdp_localization'),
@@ -31,22 +33,17 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_sim_time',
             default_value='false',
-            description='Use simulation time while authoring row plans',
+            description='Use simulation time while authoring tray waypoints',
         ),
         DeclareLaunchArgument(
             'map',
             default_value=default_map_file,
-            description='Map used as the RViz background for row authoring',
+            description='Map used as the RViz background',
         ),
         DeclareLaunchArgument(
             'plan_path',
             default_value='~/mdp_ws/generated_row_plan.json',
-            description='Writable JSON file created by the row-plan builder',
-        ),
-        DeclareLaunchArgument(
-            'seed_plan_path',
-            default_value='',
-            description='Optional existing JSON plan used when plan_path is absent',
+            description='Writable JSON tray plan created by the generator',
         ),
         DeclareLaunchArgument(
             'clear_plan',
@@ -54,25 +51,40 @@ def generate_launch_description():
             description='Start from an empty generated plan',
         ),
         DeclareLaunchArgument(
-            'capture_mode',
-            default_value='tray',
-            description='Use tray to capture A/B then C/D, or row for old row pairs',
+            'longitudinal_margin_m',
+            default_value='0.20',
+            description='Extra waypoint distance beyond tray ends',
+        ),
+        DeclareLaunchArgument(
+            'lateral_offset_m',
+            default_value='0.35',
+            description='Robot-center offset from each tray side',
+        ),
+        DeclareLaunchArgument(
+            'click_search_radius_m',
+            default_value='0.25',
+            description='Search radius if the click misses an occupied pixel',
+        ),
+        DeclareLaunchArgument(
+            'occupied_threshold',
+            default_value='65',
+            description='Map occupancy value treated as obstacle',
         ),
         DeclareLaunchArgument(
             'launch_rviz',
             default_value='true',
-            description='Open RViz with row-plan authoring tools',
+            description='Open RViz for tray selection',
         ),
         DeclareLaunchArgument(
             'rviz_config_file',
             default_value=default_rviz_config,
-            description='RViz config containing row-plan tools and markers',
+            description='RViz config used while authoring',
         ),
 
         Node(
             package='nav2_map_server',
             executable='map_server',
-            name='row_plan_map_server',
+            name='auto_tray_map_server',
             output='screen',
             parameters=[
                 {'use_sim_time': use_sim_time},
@@ -82,25 +94,27 @@ def generate_launch_description():
         Node(
             package='nav2_lifecycle_manager',
             executable='lifecycle_manager',
-            name='lifecycle_manager_row_plan_authoring',
+            name='lifecycle_manager_auto_tray_authoring',
             output='screen',
             parameters=[{
                 'use_sim_time': use_sim_time,
                 'autostart': True,
-                'node_names': ['row_plan_map_server'],
+                'node_names': ['auto_tray_map_server'],
             }],
         ),
         Node(
             package='mdp_mainloop',
-            executable='row_plan_builder_node',
-            name='mdp_row_plan_builder_node',
+            executable='auto_tray_waypoint_node',
+            name='mdp_auto_tray_waypoint_node',
             output='screen',
             parameters=[
                 {'use_sim_time': use_sim_time},
                 {'plan_path': plan_path},
-                {'seed_plan_path': seed_plan_path},
                 {'clear_on_start': clear_plan},
-                {'capture_mode': capture_mode},
+                {'longitudinal_margin_m': longitudinal_margin_m},
+                {'lateral_offset_m': lateral_offset_m},
+                {'click_search_radius_m': click_search_radius_m},
+                {'occupied_threshold': occupied_threshold},
             ],
         ),
         Node(
