@@ -15,7 +15,7 @@ twist_mux:
         priority: 88
       navigation:
         topic: cmd_vel_nav
-        timeout: 0.2
+        timeout: 0.4
         priority: 80
       idle:
         topic: cmd_vel_idle
