@@ -13,7 +13,7 @@
   <depend>std_srvs</depend>
   <depend>python3-opencv</depend>
   <depend>python3-numpy</depend>
-  <depend>python3-ament-index</depend>
+  <depend>python3-ament-index-python</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
