@@ -3,10 +3,13 @@
 
     <param name="port" value="8765"/>
     <param name="message_backlog_size" value="5"/>
+    <param name="num_threads" value="0"/>
 
     <param name="best_effort_qos_topic_whitelist" value="[
       '^/camera/color/image_raw/compressed$',
-      '^/gripper_camera/image_raw/compressed$'
+      '^/gripper_camera/image_raw/compressed$',
+      '^/scan$',
+      '^/local_costmap/costmap$'
     ]"/>
     
     <param name="topic_whitelist" value="[
@@ -16,7 +19,12 @@
       '^/mirte_base_controller/odom$',
       '^/scan$',
       '^/tf$',
-      '^/tf_static$'
+      '^/tf_static$',
+      '^/local_costmap/costmap$',
+      '^/map$',
+      '^/mission_markers$',
+      '^/received_global_plan$',
+      '^/amcl_pose$'
     ]"/>
 
 
