@@ -1,29 +1,26 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess
-from launch_ros.actions import Node
-from launch.substitutions import LaunchConfiguration
 from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    device_arg = DeclareLaunchArgument(
-        'device',
-        default_value='cpu',
-        description='Torch device for YOLO inference (e.g. cpu, 0, cuda:0)',
-    )
+    return LaunchDescription([
+        DeclareLaunchArgument('device', default_value='cpu',
+                              description='YOLO device (cpu or cuda:0)'),
 
-    perception = Node(
-        package='mdp_perception',
-        executable='perception_node',
-        name='perception_node',
-        output='screen',
-        parameters=[{'device': LaunchConfiguration('device')}],
-    )
+        Node(
+            package='mdp_perception',
+            executable='perception_node',
+            name='perception_node',
+            output='screen',
+            parameters=[{'device': LaunchConfiguration('device')}],
+        ),
 
-    image_view = ExecuteProcess(
-        cmd=['ros2', 'run', 'rqt_image_view', 'rqt_image_view',
-             '/perception/debug_image/compressed'],
-        output='screen',
-    )
-
-    return LaunchDescription([device_arg, perception, image_view])
+        Node(
+            package='state_node',
+            executable='state_node',
+            name='state_node',
+            output='screen',
+        ),
+    ])
