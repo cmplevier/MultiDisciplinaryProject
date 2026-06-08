@@ -10,12 +10,12 @@ from ament_index_python.packages import get_package_share_directory
 from greenhouse_sim.simulator import GreenhouseSimulator
 from pupil_apriltags import Detector
 from rclpy.node import Node
-from sensor_msgs.msg import CompressedImage, Image
+from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from ultralytics import YOLO
 
-TOPIC_IMAGE = '/gripper_camera/image_raw'
+TOPIC_IMAGE = '/gripper_camera/image_raw/compressed'
 TOPIC_RESULT = '/perception/scan_result'
 TOPIC_DEBUG = '/perception/debug_image/compressed'
 YOLO_MODEL = str(Path(get_package_share_directory('mdp_perception')) / 'models' / 'flower.pt')
@@ -47,7 +47,7 @@ class PerceptionNode(Node):
 
         self._result_pub = self.create_publisher(String, TOPIC_RESULT, 10)
         self._debug_pub = self.create_publisher(CompressedImage, TOPIC_DEBUG, 10)
-        self.create_subscription(Image, TOPIC_IMAGE, self._image_cb, 10)
+        self.create_subscription(CompressedImage, TOPIC_IMAGE, self._image_cb, 10)
 
         self.create_service(Trigger, '/perception/start_scan', self._start_cb)
         self.create_service(Trigger, '/perception/stop_scan', self._stop_cb)
@@ -105,9 +105,7 @@ class PerceptionNode(Node):
         return response
 
     def _decode(self, msg):
-        frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
-        if msg.encoding == 'rgb8':
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        frame = cv2.imdecode(np.frombuffer(msg.data, dtype=np.uint8), cv2.IMREAD_COLOR)
         return cv2.rotate(frame, cv2.ROTATE_180)
 
     def _image_cb(self, msg):
