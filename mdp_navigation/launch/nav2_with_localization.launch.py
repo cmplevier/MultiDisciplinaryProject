@@ -29,7 +29,7 @@ def generate_launch_description():
             'for dev in /dev/video*; do '
             'v4l2-ctl --device=$dev --set-ctrl=focus_automatic_continuous=1 2>/dev/null && echo "autofocus enabled on $dev" && continue; '
             'v4l2-ctl --device=$dev --set-ctrl=focus_auto=1 2>/dev/null && echo "autofocus enabled on $dev (legacy)"; '
-            'done'
+            'done; true'
         ],
         output='screen',
         condition=UnlessCondition(use_sim_time),

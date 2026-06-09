@@ -15,6 +15,7 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, String
+from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -177,6 +178,13 @@ class MainLoopNode(Node):
             self,
             NavigateToPose,
             nav_action_name,
+        )
+
+        self.perception_start_client = self.create_client(
+            Trigger, '/perception/start_scan'
+        )
+        self.perception_stop_client = self.create_client(
+            Trigger, '/perception/stop_scan'
         )
 
         self.cmd_vel_pub = self.create_publisher(Twist, cmd_vel_topic, 10)
@@ -1030,6 +1038,7 @@ class MainLoopNode(Node):
             self.get_logger().info(
                 f"Reached scan start for {self.current_task['task_id']}"
             )
+            self._call_perception(self.perception_start_client, '/perception/start_scan')
             self.strafe_start_yaw = self.get_yaw_from_pose(self.current_pose)
             self.strafe_blocked_since = None
             self.state = 'STRAFING_ROW'
@@ -1050,6 +1059,7 @@ class MainLoopNode(Node):
                 f"Task Complete: {self.current_task['task_id']}"
             )
             self.force_stop_robot()
+            self._call_perception(self.perception_stop_client, '/perception/stop_scan')
             self.finish_current_task(True, 'completed')
             return
 
@@ -1738,6 +1748,17 @@ class MainLoopNode(Node):
         if task['type'] == 'NAV_ONLY':
             return task['goal_pose']
         return task['scan_end_pose']
+
+    def _call_perception(self, client, name):
+        if not client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn(f'Perception service {name} not available, skipping')
+            return
+        future = client.call_async(Trigger.Request())
+        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+        if future.done():
+            self.get_logger().info(f'{name}: {future.result().message}')
+        else:
+            self.get_logger().warn(f'{name} call timed out')
 
     def force_stop_robot(self):
         """Publish zero velocity on both command and stop channels."""

@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from launch.conditions import IfCondition
 from launch_ros.actions import Node
 
 
@@ -106,6 +107,25 @@ def generate_launch_description():
             'blocked_tray_retry_delay_sec',
             default_value='60.0',
             description='Seconds before a skipped tray can be retried'),
+
+        DeclareLaunchArgument(
+            'enable_perception',
+            default_value='false',
+            description='Launch the perception node alongside the mainloop'),
+
+        DeclareLaunchArgument(
+            'perception_device',
+            default_value='cpu',
+            description='YOLO device for perception node (cpu or cuda:0)'),
+
+        Node(
+            package='mdp_perception',
+            executable='perception_node',
+            name='perception_node',
+            output='screen',
+            parameters=[{'device': LaunchConfiguration('perception_device')}],
+            condition=IfCondition(LaunchConfiguration('enable_perception')),
+        ),
 
         Node(
             package='mdp_mainloop',

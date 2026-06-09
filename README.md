@@ -663,6 +663,34 @@ ros2 launch mdp_mainloop mainloop.launch.py \
   plan_path:=~/mdp_ws/generated_row_plan.json
 ```
 
+To also launch the perception node alongside the mainloop, add:
+
+```bash
+ros2 launch mdp_mainloop mainloop.launch.py \
+  use_sim_time:=false \
+  clear_history:=true \
+  cmd_vel_topic:=/cmd_vel_nav \
+  strafe_block_unknown_costmap:=true \
+  strafe_block_timeout_sec:=8.0 \
+  blocked_tray_retry_delay_sec:=60.0 \
+  plan_path:=~/mdp_ws/generated_row_plan.json \
+  enable_perception:=true \
+  perception_device:=cpu
+```
+
+Parameter meanings:
+
+```text
+enable_perception
+  false (default) does not start the perception node.
+  true starts mdp_perception alongside the mainloop.
+  The mainloop will call /perception/start_scan and /perception/stop_scan
+  automatically at the start and end of each SCAN_ROW strafe.
+
+perception_device
+  YOLO inference device. Use cpu or cuda:0.
+```
+
 Check that the executor has loaded the plan and is waiting:
 
 ```bash
@@ -788,7 +816,8 @@ ros2 launch mdp_mainloop mainloop.launch.py \
   strafe_block_unknown_costmap:=true \
   strafe_block_timeout_sec:=8.0 \
   blocked_tray_retry_delay_sec:=60.0 \
-  plan_path:=~/mdp_ws/generated_row_plan.json
+  plan_path:=~/mdp_ws/generated_row_plan.json \
+  enable_perception:=true
 ```
 
 ## Mainloop Behavior
