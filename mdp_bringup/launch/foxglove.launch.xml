@@ -8,13 +8,16 @@
     <param name="best_effort_qos_topic_whitelist" value="[
       '^/camera/color/image_raw/compressed$',
       '^/gripper_camera/image_raw/compressed$',
+      '^/perception/debug_image/compressed$',
       '^/scan$',
       '^/local_costmap/costmap$'
     ]"/>
-    
+
     <param name="topic_whitelist" value="[
       '^/camera/color/image_raw/compressed$',
       '^/gripper_camera/image_raw/compressed$',
+      '^/perception/debug_image/compressed$',
+      '^/perception/scan_result$',
       '^/mirte_base_controller/cmd_vel$',
       '^/mirte_base_controller/odom$',
       '^/scan$',
@@ -27,6 +30,8 @@
       '^/amcl_pose$'
     ]"/>
 
-
   </node>
+
+  <node pkg="mdp_perception" exec="perception_node" name="perception_node" output="screen"/>
+
 </launch>
