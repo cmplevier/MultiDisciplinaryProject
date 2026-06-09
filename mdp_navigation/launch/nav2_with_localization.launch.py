@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, LogInfo, RegisterEventHandler
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
@@ -22,6 +22,18 @@ def generate_launch_description():
     log_level = LaunchConfiguration('log_level')
     launch_rviz = LaunchConfiguration('launch_rviz')
     rviz_config_file = LaunchConfiguration('rviz_config_file')
+
+    autofocus = ExecuteProcess(
+        cmd=[
+            'bash', '-c',
+            'for dev in /dev/video*; do '
+            'v4l2-ctl --device=$dev --set-ctrl=focus_automatic_continuous=1 2>/dev/null && echo "autofocus enabled on $dev" && continue; '
+            'v4l2-ctl --device=$dev --set-ctrl=focus_auto=1 2>/dev/null && echo "autofocus enabled on $dev (legacy)"; '
+            'done'
+        ],
+        output='screen',
+        condition=UnlessCondition(use_sim_time),
+    )
 
     wait_for_localization = ExecuteProcess(
         cmd=[
@@ -196,6 +208,7 @@ def generate_launch_description():
             ]),
             description='RViz config file to use for combined localization and navigation'
         ),
+        autofocus,
         localization_launch,
         wait_for_localization,
         start_navigation_after_localization,
