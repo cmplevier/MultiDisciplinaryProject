@@ -160,7 +160,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         # Match the local safety buffer so global plans keep some clearance too.
-        cost_scaling_factor: 8.0
+        cost_scaling_factor: 0.0
         inflation_radius: 0.20
       always_send_full_costmap: True
 
