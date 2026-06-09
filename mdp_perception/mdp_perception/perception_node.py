@@ -132,7 +132,6 @@ class PerceptionNode(Node):
                 continue
 
             try:
-                frame = cv2.rotate(frame, cv2.ROTATE_180)
                 lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
                 lab[:, :, 0] = _CLAHE.apply(lab[:, :, 0])
                 frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
