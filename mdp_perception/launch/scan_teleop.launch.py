@@ -18,7 +18,7 @@ def generate_launch_description():
         ),
 
         Node(
-            package='state_node',
+            package='mdp_state',
             executable='state_node',
             name='state_node',
             output='screen',
