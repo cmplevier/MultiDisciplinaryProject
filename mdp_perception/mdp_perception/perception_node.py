@@ -22,6 +22,14 @@ YOLO_MODEL = str(Path(get_package_share_directory('mdp_perception')) / 'models' 
 YOLO_CONF = 0.15
 YOLO_IOU = 0.4
 
+CLASS_COLORS = {
+    'flower_red':   (0,   0,   220),
+    'flower_white': (220, 220, 220),
+    'flower_pink':  (180, 105, 255),
+    'bug':          (0,   220, 220),
+}
+_CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+
 
 class PerceptionNode(Node):
     def __init__(self):
@@ -125,6 +133,9 @@ class PerceptionNode(Node):
                 continue
 
             try:
+                lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+                lab[:, :, 0] = _CLAHE.apply(lab[:, :, 0])
+                frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
                 annotated = frame.copy()
 
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -150,9 +161,10 @@ class PerceptionNode(Node):
                         label = self._yolo.names[int(box.cls[0])]
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         conf = float(box.conf[0])
-                        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 120, 255), 2)
+                        color = CLASS_COLORS.get(label, (0, 120, 255))
+                        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
                         cv2.putText(annotated, f'{label} {conf:.2f} #{track_id}', (x1, y1 - 6),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 120, 255), 1)
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
 
                         with self._scan_lock:
                             if not self._buffering:
