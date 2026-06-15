@@ -1,12 +1,8 @@
 ## Demo Videos
 
-### IRL Demo
-
-![IRL Demo](./Demo_videos/IRL_DEMO.gif)
-
-### Navigation Demo
-
-![Navigation Demo](./Demo_videos/NAV2_DEMO.gif)
+| IRL Demo | Navigation Demo |
+|---|---|
+| ![IRL Demo](./Demo_videos/IRL_DEMO.gif) | ![Navigation Demo](./Demo_videos/NAV2_DEMO.gif) |
 
 ---
 
