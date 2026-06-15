@@ -2,11 +2,12 @@
 
 ### IRL Demo
 
-![IRL Demo](./Demo_videos/IRL_DEMO.mp4)
+![IRL Demo](./Demo_videos/IRL_DEMO.gif)
 
 ### Navigation Demo
 
-![Navigation Demo](./Demo_videos/NAV2_DEMO.mp4)
+![Navigation Demo](./Demo_videos/NAV2_DEMO.gif)
+
 ---
 
 # MDP 2026 - FloraNova Greenhouse Robot
