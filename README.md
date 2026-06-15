@@ -1,3 +1,13 @@
+## Demo Videos
+
+### IRL Demo
+<video src="Demo_videos/IRL_DEMO.mp4" controls width="100%"></video>
+
+### Navigation Demo
+<video src="Demo_videos/NAV2_DEMO.mp4" controls width="100%"></video>
+
+---
+
 # MDP 2026 - FloraNova Greenhouse Robot
 
 TU Delft RO47007 Multidisciplinary Project. MIRTE Master V2, ROS 2 Humble.
